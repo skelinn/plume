@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Plume — Flight Viewer</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2c4 6 7 10 7 16a7 7 0 0 1-14 0c0-6 3-10 7-16z' fill='%23ff8a30'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/vendor/uplot/uPlot.min.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "/static/vendor/three/three.module.min.js",
+      "three/addons/": "/static/vendor/three/examples/jsm/",
+      "uplot": "/static/vendor/uplot/uPlot.esm.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand"><svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true"><path d="M16 2c4 6 7 10 7 16a7 7 0 0 1-14 0c0-6 3-10 7-16z" fill="currentColor"/></svg><b>PLUME</b><small>flight viewer</small></div>
+    <label class="field"><span>Replay</span><select id="sel-a" aria-label="Replay"></select></label>
+    <button id="btn-compare" class="btn" title="Compare two replays (C)">Compare</button>
+    <label class="field" id="field-b" hidden><span>vs</span><select id="sel-b" aria-label="Comparison replay"></select></label>
+    <div class="spacer"></div>
+    <div class="seg" id="cam-seg" role="group" aria-label="Camera">
+      <button data-cam="chase" title="Chase camera (1)">Chase</button>
+      <button data-cam="ground" title="Ground observer (2)">Ground</button>
+      <button data-cam="top" title="Top-down (3)">Top</button>
+      <button data-cam="free" title="Free orbit (4)">Free</button>
+    </div>
+    <label class="field"><span>Speed</span><select id="sel-speed" aria-label="Playback speed"></select></label>
+    <button id="btn-trail" class="btn hide-sm" title="Trail colouring (T)">Trail: speed</button>
+    <button id="btn-tele" class="btn show-sm" title="Telemetry">Telemetry</button>
+    <button id="btn-help" class="btn icon" title="Shortcuts (?)" aria-label="Help">?</button>
+  </header>
+
+  <main id="stage">
+    <section id="viewports" aria-label="3D view"></section>
+    <aside id="telemetry" aria-label="Telemetry">
+      <div id="legend" class="legend" hidden></div>
+      <div id="charts"></div>
+    </aside>
+  </main>
+
+  <footer id="transport" aria-label="Playback controls"></footer>
+
+  <div id="overlay" hidden></div>
+  <div id="toast" role="status"></div>
+  <div id="help" hidden>
+    <div class="help-card">
+      <h2>Shortcuts</h2>
+      <dl>
+        <dt>Space</dt><dd>play / pause</dd>
+        <dt>← →</dt><dd>step one frame (Shift: one second)</dd>
+        <dt>1 2 3 4</dt><dd>chase · ground · top · free camera</dd>
+        <dt>C</dt><dd>compare with another replay</dd>
+        <dt>L</dt><dd>live stream / follow live</dd>
+        <dt>[ ]</dt><dd>slower / faster</dd>
+        <dt>T</dt><dd>trail colour: speed / phase</dd>
+        <dt>H</dt><dd>hide / show the interface</dd>
+        <dt>Home End</dt><dd>jump to start / end</dd>
+        <dt>drag · wheel</dt><dd>orbit / zoom the camera (double-click resets)</dd>
+      </dl>
+      <p>URL: <code>?replay=&lt;id&gt;&amp;camera=chase|ground|top|free</code> · <code>?compare=&lt;a&gt;,&lt;b&gt;</code> · <code>?replay=live</code></p>
+    </div>
+  </div>
+
+  <script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

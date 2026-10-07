@@ -1,0 +1,49 @@
+# Small powered-landing test vehicle (think "grasshopper"-class hopper).
+# Used by the landing environment and the PID-vs-RL benchmark.
+name: lander_small
+description: 2.3 t single-engine VTVL test lander (40 kN, 30-100% throttle) with cold-gas RCS and four landing legs.
+geometry:
+  length: 10.0          # m, hull base to nose tip
+  diameter: 1.2
+  nose_length: 1.2
+legs:
+  count: 4
+  span: 2.2             # footpad radius from the axis
+  height: 1.0           # footpads hang this far below the hull base
+  attach_z: 1.8
+  footpad_radius: 0.15
+  max_touchdown_speed: 5.0
+mass:
+  dry: 1300.0           # kg
+  dry_cg_z: 3.0         # engine and thrust structure keep the dry CG low
+  dry_inertia: null     # estimate from geometry
+tanks:
+  - name: main
+    capacity: 1000.0
+    z_bottom: 1.2
+    z_top: 6.5
+    radius: 0.55
+engine:
+  type: liquid
+  thrust_vac: 40000.0   # N (landing T/W ~2.2)
+  isp_vac: 300.0        # s
+  isp_sl: 275.0
+  throttle_min: 0.3
+  throttle_max: 1.0
+  throttle_tau: 0.12
+  max_ignitions: null
+  gimbal_max_deg: 8.0
+  gimbal_rate_deg_s: 25.0
+  gimbal_tau: 0.05
+  gimbal_z: 0.6
+  nozzle_radius: 0.33
+rcs:
+  enabled: true
+  thrust: 300.0         # N per thruster
+  isp: 70.0
+  propellant: 25.0      # kg nitrogen
+  z: 8.5
+  pods: 4
+aero:
+  enabled: true
+  stations: 10

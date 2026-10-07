@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/plume-sim/plume/replay.schema.json",
+  "title": "Plume replay (v1)",
+  "description": "A recorded flight (simulated or real). World frame is ENU (x east, y north, z up), SI units, angles in radians, quaternions [w, x, y, z] rotating body to world. The body frame has +z along the vehicle axis toward the nose, origin at the base of the hull.",
+  "type": "object",
+  "required": ["format", "version", "meta", "frames"],
+  "properties": {
+    "format": { "const": "plume-replay" },
+    "version": { "const": 1 },
+    "meta": {
+      "type": "object",
+      "required": ["title", "source", "vehicle", "scene"],
+      "properties": {
+        "title": { "type": "string" },
+        "source": { "enum": ["sim", "real"] },
+        "created": { "type": "string" },
+        "plume_version": { "type": "string" },
+        "controller": { "type": "string" },
+        "seed": { "type": ["integer", "null"] },
+        "vehicle": {
+          "type": "object",
+          "required": ["name", "length", "diameter"],
+          "properties": {
+            "name": { "type": "string" },
+            "length": { "type": "number" },
+            "diameter": { "type": "number" },
+            "nose_length": { "type": "number" },
+            "legs": {
+              "type": "object",
+              "properties": {
+                "count": { "type": "integer" },
+                "span": { "type": "number", "description": "radial distance of footpads from axis" },
+                "height": { "type": "number", "description": "footpad depth below the hull base" },
+                "attach_z": { "type": "number" }
+              }
+            },
+            "engine": {
+              "type": "object",
+              "properties": {
+                "nozzle_radius": { "type": "number" },
+                "gimbal_z": { "type": "number" },
+                "thrust_max": { "type": "number" }
+              }
+            },
+            "rcs_z": { "type": "number" },
+            "cargo_mass": { "type": "number" },
+            "dry_mass": { "type": "number" },
+            "prop_mass_initial": { "type": "number" }
+          }
+        },
+        "scene": {
+          "type": "object",
+          "required": ["frame", "ground"],
+          "properties": {
+            "frame": { "enum": ["flat", "spherical"] },
+            "earth_radius": { "type": ["number", "null"] },
+            "ground": {
+              "type": "object",
+              "required": ["type"],
+              "properties": {
+                "type": { "enum": ["plane", "terrain", "none"] },
+                "terrain_id": { "type": ["string", "null"], "description": "base heightmap served at /api/terrain/{id}" },
+                "detail_terrain_ids": { "type": "array", "items": { "type": "string" }, "description": "optional high-resolution tiles drawn over the base map" }
+              }
+            },
+            "pads": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "pos", "radius"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "pos": { "$ref": "#/$defs/vec3" },
+                  "radius": { "type": "number" }
+                }
+              }
+            },
+            "target": {
+              "type": ["object", "null"],
+              "properties": {
+                "pos": { "$ref": "#/$defs/vec3" },
+                "radius": { "type": "number" }
+              }
+            }
+          }
+        },
+        "outcome": {
+          "type": ["object", "null"],
+          "properties": {
+            "success": { "type": "boolean" },
+            "reason": { "type": "string" },
+            "metrics": { "type": "object" }
+          }
+        }
+      }
+    },
+    "frames": {
+      "type": "object",
+      "description": "Columnar time series; every present array has the same length as t.",
+      "required": ["t", "pos", "quat"],
+      "properties": {
+        "t": { "type": "array", "items": { "type": "number" } },
+        "pos": { "type": "array", "items": { "$ref": "#/$defs/vec3" }, "description": "body origin (hull base centre), world frame" },
+        "quat": { "type": "array", "items": { "$ref": "#/$defs/quat" } },
+        "vel": { "type": "array", "items": { "$ref": "#/$defs/vec3" } },
+        "omega": { "type": "array", "items": { "$ref": "#/$defs/vec3" }, "description": "body rates, body frame" },
+        "alt": { "type": "array", "items": { "type": "number" }, "description": "altitude above ground (AGL) of the footpads" },
+        "throttle": { "type": "array", "items": { "type": "number" } },
+        "thrust": { "type": "array", "items": { "type": "number" } },
+        "gimbal": { "type": "array", "items": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 } },
+        "rcs": { "type": "array", "items": { "$ref": "#/$defs/vec3" }, "description": "normalised RCS torque command per body axis [-1, 1]" },
+        "prop_mass": { "type": "array", "items": { "type": "number" } },
+        "mass": { "type": "array", "items": { "type": "number" } },
+        "g_load": { "type": "array", "items": { "type": "number" } },
+        "mach": { "type": "array", "items": { "type": "number" } },
+        "q_dyn": { "type": "array", "items": { "type": "number" } },
+        "wind": { "type": "array", "items": { "$ref": "#/$defs/vec3" } },
+        "phase": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["t", "type"],
+        "properties": {
+          "t": { "type": "number" },
+          "type": { "type": "string" },
+          "label": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "vec3": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+    "quat": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }
+  }
+}
