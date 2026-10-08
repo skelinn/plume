@@ -46,6 +46,9 @@ geo = [
     "rasterio>=1.4",
     "pyproj>=3.6",
 ]
+gnc = [
+    "cvxpy>=1.5",
+]
 validation = [
     "rocketpy>=1.6",
 ]

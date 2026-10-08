@@ -75,6 +75,9 @@ class LandingAutopilot:
         self.v_gate = 15.0
         self.h_gate = 0.0
         self.retargeted: float | None = None  # predicted miss that triggered a retarget
+        # optional convex powered-descent guidance (plume.control.convex_landing); None =
+        # hoverslam. Falls back to the hoverslam if no plan is feasible.
+        self.convex = None
         self.att = AttitudeController(sim)
         self.reset()
 
@@ -86,6 +89,8 @@ class LandingAutopilot:
         self.last_axis = np.array([0.0, 0.0, 1.0])  # last commanded thrust axis
         self.predicted_miss: np.ndarray | None = None  # optional, set by a mission planner
         self._prev: tuple[np.ndarray, np.ndarray] | None = None  # (velocity, predicted accel)
+        if self.convex is not None:
+            self.convex.reset()
 
     # ------------------------------------------------------------------ helpers
     def _max_accel(self, st: State) -> tuple[float, float]:
@@ -210,9 +215,17 @@ class LandingAutopilot:
                         self.a_v = float(
                             np.clip(descent * descent / (2.0 * h_avail), 0.5, self.a_v)
                         )
+            cvx = self.convex
+            if cvx is not None and not cvx.failed:
+                # ignition timed from the feasibility of the convex plan
+                wants = h < 5.0 or (
+                    self.allow_ignition and sim.prop_mass > 0 and cvx.wants_ignition(st)
+                )
             if wants and self.allow_ignition and sim.prop_mass > 0:
                 self.phase = "burn"
                 self._check_divert_limit(st, up, rel_h, v_h, h, descent)
+                if cvx is not None and not cvx.failed:
+                    cvx.ignite(st)
             else:
                 # engine-first into the (estimated) airflow, tilted to steer with body lift
                 v_air = st.vel_com - self.wind_forecast(st)
@@ -254,6 +267,25 @@ class LandingAutopilot:
                 self.h_gate = 0.0
                 self.a_v = max(self.a_v, 0.5 * descent * descent / max(h, 1.0))
                 self.target = st.com - h * up  # land where we are (horizontal aim only)
+
+        cvx = self.convex
+        if cvx is not None and cvx.active:
+            f_des = cvx.command(st)
+            if f_des is not None:
+                d_h = self.disturbance - (self.disturbance @ up) * up
+                t_cap = min(eng.throttle_max * t_max, cvx.hard_accel_limit * st.mass)
+                axis, thrust = self.allocate(
+                    st, f_des - d_h, up, self.max_tilt, eng.throttle_min * t_max, t_cap
+                )
+                self.last_axis = axis
+                gimbal, rcs = self.att(st, axis, max(sim.thrust, 0.5 * thrust))
+                return thrust / max(t_max, 1e-9), gimbal, rcs
+            # hand over to the hoverslam (terminal phase, or no feasible plan): a constant
+            # deceleration that stops at the ground from here
+            self.a_v = float(
+                np.clip((descent * descent - self.sink**2) / (2.0 * max(h, 1.0)), 0.3, 4.0 * g)
+            )
+            self.integral = 0.0
 
         # ---- vertical channel: track the stopping profile
         # near the ground the descent rate tapers linearly, whatever the decel profile

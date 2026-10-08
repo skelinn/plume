@@ -591,6 +591,49 @@ class HopGuidanceSpec(Spec):
         description="experimental: brake to a slow gate above the pad and fly the divert at "
         "low speed (did not improve Monte Carlo results yet; docs/models/guidance.md)",
     )
+    # ---- ascent load relief (docs/models/guidance.md, "Ascent load relief")
+    load_relief: bool = Field(
+        False,
+        description="limit the commanded angle of attack in the gravity turn so the predicted "
+        "aerodynamic trim uses at most load_relief_gimbal_fraction of the gimbal range",
+    )
+    load_relief_gimbal_fraction: float = Field(
+        0.4, gt=0, le=1, description="gimbal-range budget for aerodynamic trim (load relief)"
+    )
+    ascent_attitude_bandwidth: float | None = Field(
+        None,
+        gt=0,
+        description="powered ascent: attitude-loop natural frequency, rad/s (None = the "
+        "default 2.5 rad/s controller)",
+    )
+    crossrange_max_deg: float = Field(
+        3.44,
+        ge=0,
+        description="gravity turn: cap on the cross-range steering angle off the velocity "
+        "(the AoA limiter still applies; larger values re-target faster after max-q)",
+    )
+    # ---- landing burn guidance
+    landing_guidance: Literal["hoverslam", "convex"] = Field(
+        "hoverslam",
+        description="landing burn: constant-deceleration hoverslam + ZEM, or convex "
+        "minimum-fuel powered-descent guidance (needs the gnc extra: cvxpy)",
+    )
+    convex_accel_g: float = Field(
+        4.0, gt=1, description="convex landing: sensed-acceleration limit of the plan, g"
+    )
+    convex_ignition_margin: float = Field(
+        0.8,
+        gt=0,
+        le=1,
+        description="convex landing: ignite when the plan is only just feasible with this "
+        "fraction of the acceleration limit (the rest is tracking margin)",
+    )
+    convex_glide_slope_deg: float = Field(
+        15.0, ge=0, lt=90, description="convex landing: minimum approach elevation angle"
+    )
+    convex_max_tilt_deg: float = Field(
+        25.0, gt=0, lt=90, description="convex landing: thrust tilt limit from vertical"
+    )
 
 
 class ScoringSpec(Spec):

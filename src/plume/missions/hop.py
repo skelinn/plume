@@ -214,6 +214,14 @@ class HopAutopilot:
         self.g = guidance
         self.kick = math.radians(kick_deg)
         self.att = AttitudeController(sim)
+        # powered ascent: optionally a stiffer attitude loop (the hull is aerodynamically
+        # unstable nose-first; at max-q the default loop needs a large pointing error to
+        # resist an unmodelled aerodynamic moment, and that error costs gimbal range)
+        self.att_ascent = (
+            AttitudeController(sim, bandwidth=guidance.ascent_attitude_bandwidth)
+            if guidance.ascent_attitude_bandwidth is not None
+            else self.att
+        )
         self.landing = LandingAutopilot(
             sim,
             mw.pad_b,
@@ -245,6 +253,19 @@ class HopAutopilot:
             self.landing.steer_max_mach = guidance.aero_steer_max_mach
             self.landing.supersonic_tilt_deg = guidance.supersonic_tilt_deg
             self.landing.subsonic_tilt_deg = guidance.subsonic_tilt_deg
+        if guidance.landing_guidance == "convex":
+            from plume.control.convex_landing import ConvexLanding, axial_drag_model
+
+            self.landing.convex = ConvexLanding(
+                self.landing,
+                accel_limit=guidance.convex_accel_g * G0,
+                ignition_margin=guidance.convex_ignition_margin,
+                glide_slope_deg=guidance.convex_glide_slope_deg,
+                max_tilt_deg=guidance.convex_max_tilt_deg,
+                hard_accel_limit=guidance.cargo_g_limit * 0.92 * G0,
+                # the predictor's nominal aerodynamics, with the in-flight drag estimate
+                drag_model=axial_drag_model(self.predictor.pm),
+            )
         self._pred_hist: list[tuple[float, float]] = []  # (t, along-track error)
         self._meco_at: float | None = None
         self.predicted_impact: np.ndarray | None = None
@@ -285,6 +306,56 @@ class HopAutopilot:
         g_cmd = g_now + d
         return math.cos(g_cmd) * h + math.sin(g_cmd) * up
 
+    def _trim_fraction(self, st, axis: np.ndarray, v_air: np.ndarray) -> float:
+        """Fraction of the gimbal range that holding ``axis`` against the (modelled,
+        mean-wind) aerodynamic moment would use at the current thrust."""
+        sim = self.sim
+        thrust = max(sim.thrust, 1.0)
+        rz = abs(self.att.gimbal_z - st.cg_z)
+        ref = np.cross(axis, st.up)
+        if float(np.linalg.norm(ref)) < 1e-9:
+            ref = np.cross(axis, np.array([1.0, 0.0, 0.0]))
+        x_b = ref / np.linalg.norm(ref)
+        R = np.column_stack([x_b, np.cross(axis, x_b), axis])
+        atm = sim.atmosphere.at(st.altitude)
+        _, tau, _, _ = sim.aero.forces(
+            R.T @ v_air, np.zeros(3), st.cg_z, atm.density, atm.speed_of_sound
+        )
+        need = float(np.hypot(tau[0], tau[1])) / max(rz * thrust, 1e-9)
+        return need / max(self.att.gimbal_max, 1e-9)
+
+    def _limit_aoa(self, st, axis: np.ndarray) -> np.ndarray:
+        """Ascent load relief on the component that matters: keep the commanded angle of
+        attack small enough that aerodynamic trim uses at most a set fraction of the gimbal
+        range (the hull is aerodynamically unstable nose-first, and a saturated gimbal at
+        max-q loses the vehicle). Guidance keeps steering within that cone, so the
+        cross-range loop re-targets the trajectory as soon as the dynamic pressure falls
+        (unlike flying along the air-relative velocity, v7 in docs/models/guidance.md)."""
+        if st.q_dyn < 5_000.0 or self.sim.thrust <= 0:
+            return axis
+        v_air = st.vel_com - st.wind
+        sp = float(np.linalg.norm(v_air))
+        if sp < 50.0:
+            return axis
+        w = v_air / sp
+        budget = self.g.load_relief_gimbal_fraction
+        if self._trim_fraction(st, axis, v_air) <= budget:
+            return axis
+        ang = math.acos(float(np.clip(axis @ w, -1.0, 1.0)))
+        if ang < 1e-6:
+            return axis
+        perp = axis - math.cos(ang) * w
+        perp /= np.linalg.norm(perp)
+        lo, hi = 0.0, ang
+        for _ in range(10):  # largest AoA within the trim budget
+            mid = 0.5 * (lo + hi)
+            c = math.cos(mid) * w + math.sin(mid) * perp
+            if self._trim_fraction(st, c, v_air) <= budget:
+                lo = mid
+            else:
+                hi = mid
+        return math.cos(lo) * w + math.sin(lo) * perp
+
     def _g_limited_throttle(self, st) -> float:
         """Throttle that keeps the cargo's sensed acceleration under the limit, counting
         the aerodynamic deceleration (estimated from the sensed load minus thrust)."""
@@ -306,7 +377,7 @@ class HopAutopilot:
             if t >= self.rise:
                 self._set_phase("pitch_kick", "Pitch kick")
             throttle = self._g_limited_throttle(st)
-            gimbal, rcs = self.att(st, self.up0, sim.thrust)
+            gimbal, rcs = self.att_ascent(st, self.up0, sim.thrust)
             return throttle, gimbal, rcs, "ascent"
         if self.phase == "pitch_kick":
             frac = min((t - self.rise) / self.g.kick_time, 1.0)
@@ -314,7 +385,7 @@ class HopAutopilot:
             axis = math.cos(ang) * self.up0 + math.sin(ang) * self.downrange0
             if frac >= 1.0:
                 self._set_phase("kick_hold", "Kick hold")
-            gimbal, rcs = self.att(st, axis, sim.thrust)
+            gimbal, rcs = self.att_ascent(st, axis, sim.thrust)
             return self._g_limited_throttle(st), gimbal, rcs, "ascent"
         if self.phase == "kick_hold":
             axis = math.cos(self.kick) * self.up0 + math.sin(self.kick) * self.downrange0
@@ -329,7 +400,7 @@ class HopAutopilot:
                 or t > self.rise + self.g.kick_time + 40
             ):
                 self._set_phase("gravity_turn", "Gravity turn")
-            gimbal, rcs = self.att(st, axis, sim.thrust)
+            gimbal, rcs = self.att_ascent(st, axis, sim.thrust)
             return self._g_limited_throttle(st), gimbal, rcs, "ascent"
         if self.phase == "gravity_turn":
             # follow the *ground* velocity: at low speed a tail/head wind would otherwise
@@ -348,15 +419,18 @@ class HopAutopilot:
                 along, cross = self._along_error(imp)
                 frame = self.mw.local_frame(*self.mw.gravity.map_coords(st.com)[:2])
                 cross_w = frame @ np.array([*self.mw.cross_dir, 0.0])
-                corr = float(np.clip(-cross / 20_000.0, -0.06, 0.06))
+                cmax = math.radians(self.g.crossrange_max_deg)
+                corr = float(np.clip(-cross / 20_000.0, -cmax, cmax))
                 axis = axis + corr * cross_w
                 axis /= np.linalg.norm(axis)
                 if along > -0.25 * self.mw.range and t - self._last_pred_t >= 0.5:
                     self._precise_meco_check(st)
+            if self.g.load_relief:
+                axis = self._limit_aoa(st, axis)
             if self._meco_at is not None and t >= self._meco_at:
                 self._set_phase("coast", "MECO", "cutoff")
                 return 0.0, np.zeros(2), np.zeros(3), "coast"
-            gimbal, rcs = self.att(st, axis, sim.thrust)
+            gimbal, rcs = self.att_ascent(st, axis, sim.thrust)
             if sim.prop_mass < self._landing_reserve(st):  # never eat the landing fuel
                 self._set_phase("coast", "MECO (fuel reserve)", "cutoff")
                 return 0.0, np.zeros(2), rcs, "coast"
@@ -436,6 +510,13 @@ class HopAutopilot:
                 self.events.append(
                     (t, "phase", f"Divert limit: safe landing {self.landing.retargeted:,.0f} m off")
                 )
+        cvx = self.landing.convex
+        if (
+            cvx is not None
+            and cvx.failed
+            and not any(e[2].startswith("Convex") for e in self.events)
+        ):
+            self.events.append((t, "phase", "Convex guidance infeasible: hoverslam fallback"))
         # legs deploy in the last seconds (low speed / low height): deployed struts lead
         # in engine-first flight and add a destabilising drag moment at speed
         if (
