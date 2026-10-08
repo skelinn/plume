@@ -62,7 +62,7 @@ Pick the highest-priority unfinished item from the Status section and continue i
 
 ## Status
 
-_Last updated: 2026-10-08_
+_Last updated: 2026-10-08 (evening)_
 
 **Done and live** (main, https://skelinn.github.io/plume/):
 - High-fidelity physics: WGS-84 rotating Earth, J2–J6 gravity, US76/NRLMSISE-00/soundings, MIL-spec turbulence, aero database, actuator dynamics, slosh, IMU/GNSS/baro/radar with an EKF.
@@ -74,8 +74,8 @@ _Last updated: 2026-10-08_
 
 | # | Item | Status | Branch / notes |
 |---|---|---|---|
-| 1 | Design trade study | in progress | main session |
-| 2 | Convex landing guidance | starting | worktree agent |
+| 1 | Design trade study | running: 4 variant campaigns (configs/dispersions/real_hop_{gimbal9,tanks105,entry1300,combined}.yaml); report via `scripts/trade_study.py` -> docs/design/trade_study.md | main. If interrupted: rerun `uv run plume mc real_hop_<variant> --workers 6` (resumable) then the script |
+| 2 | Convex landing guidance | in progress | agent branch (pushed to origin as it lands; see `git branch -r`) |
 | 3 | Ascent load relief + re-targeting | starting | same agent as 2 |
 | 4 | Test-flight programme | starting | worktree agent |
 | 5 | Hop-test-rig model | starting | same agent as 4 |
@@ -83,5 +83,5 @@ _Last updated: 2026-10-08_
 | 7 | Ship landing | starting | worktree agent |
 | 8 | Landing gear + soil | starting | same agent as 7 |
 | 9 | Mission planner | starting | worktree agent |
-| 10 | AI pilot training | starting | idle trainer on the owner's PC (pauses for games/GPU use) |
+| 10 | AI pilot training | queued until the Monte Carlo campaigns finish (CPU) | checkpoint at 5.0M / 50M steps in runs/ppo_landing (local PC only, not in git); `uv run plume train --when-idle` |
 | 11 | Safety-analysis export | starting | same agent as 9 |
