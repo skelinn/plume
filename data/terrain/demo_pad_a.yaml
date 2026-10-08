@@ -1,0 +1,8 @@
+name: demo_pad_a
+x_min: -200.0
+x_max: 200.0
+y_min: -200.0
+y_max: 200.0
+image: demo_pad_a.png
+z_min: 1436.6071131575718
+z_max: 1436.6071131575718

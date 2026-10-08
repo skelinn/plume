@@ -1,0 +1,11 @@
+# When may `plume train --when-idle` use the machine?
+poll_s: 5              # how often to check
+resume_after_s: 300    # start/resume only after 5 minutes of continuous idle
+gpu_threshold: 50      # % SM utilisation summed over *other* processes ...
+gpu_busy_s: 20         # ... sustained this long counts as busy
+stop_timeout_s: 120    # grace period for the worker to checkpoint and exit
+steam: true            # pause while any Steam game runs
+blocklist: []          # extra process names that should pause training, e.g.
+#  - blender.exe
+#  - obs64.exe
+#  - Resolve.exe

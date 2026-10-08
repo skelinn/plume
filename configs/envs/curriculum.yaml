@@ -1,0 +1,48 @@
+# Curriculum for the landing task: easy low drops -> full descents in wind.
+# A stage is promoted when the rolling success rate over `window` episodes
+# exceeds `promote_success`. Earlier stages keep being sampled with
+# probability `replay_fraction` so skills are not forgotten.
+promote_success: 0.8
+window: 200
+min_episodes: 300
+replay_fraction: 0.2
+stages:
+  - name: hop_drop          # short drop, nearly upright, calm
+    altitude: [30, 80]
+    offset: [0, 5]
+    descent_speed: [0, 6]
+    horizontal_speed: [0, 1]
+    tilt_deg: [0, 3]
+    rate_deg_s: [0, 2]
+    prop_fraction: [0.3, 0.45]
+  - name: low_descent       # a few hundred metres, some offset, light wind
+    altitude: [150, 450]
+    offset: [0, 30]
+    descent_speed: [10, 35]
+    horizontal_speed: [0, 4]
+    tilt_deg: [0, 6]
+    rate_deg_s: [0, 4]
+    prop_fraction: [0.25, 0.45]
+    wind_speed: [0, 4]
+  - name: mid_descent       # ~1 km, faster, gusty
+    altitude: [800, 1600]
+    offset: [0, 80]
+    descent_speed: [40, 90]
+    horizontal_speed: [0, 5]
+    tilt_deg: [0, 8]
+    rate_deg_s: [0, 5]
+    prop_fraction: [0.25, 0.4]
+    wind_speed: [0, 7]
+    gust_max: 3.0
+    turbulence: 0.8
+  - name: full_descent      # 2.5-4 km at near terminal velocity, wind + gusts
+    altitude: [2500, 4000]
+    offset: [0, 120]
+    descent_speed: [110, 170]
+    horizontal_speed: [0, 5]
+    tilt_deg: [0, 10]
+    rate_deg_s: [0, 6]
+    prop_fraction: [0.3, 0.45]
+    wind_speed: [2, 10]
+    gust_max: 6.0
+    turbulence: 1.5

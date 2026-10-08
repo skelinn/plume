@@ -224,6 +224,7 @@ class RocketSim:
         ).reshape(-1, 3)
         self.cargo_body = np.array([0.0, 0.0, vehicle.cargo.cg_z])
         self._rbuf = np.zeros(9)
+        self._state_cache: State | None = None
         self._mp_dirty = True
         self._g_filter_k = 1.0 - math.exp(-self.dt / 0.05)
         self.reset()
@@ -286,6 +287,7 @@ class RocketSim:
         self.data.qvel[:3] = vel
         self.data.qvel[3:6] = omega
         mujoco.mj_forward(self.model, self.data)
+        self._state_cache = None
         self._prev_v_cg = self._point_velocity(self.mp.cg)
         self._prev_v_cargo = self._point_velocity(self.cargo_body)
         self.airborne = False
@@ -328,6 +330,7 @@ class RocketSim:
         )
         self.engine.command(throttle, gimbal)
         self.rcs.command(rcs, self.mp.cg_z)
+        self._state_cache = None
 
     # ------------------------------------------------------------------ kinematics
     @property
@@ -353,6 +356,7 @@ class RocketSim:
         return self.state
 
     def _physics_step(self) -> None:
+        self._state_cache = None
         dt = self.dt
         data = self.data
         R = self.rot
@@ -387,6 +391,8 @@ class RocketSim:
         f_r, tau_r, mdot_r = self.rcs.update(cgz, self.rcs_prop, dt)
 
         wind = self.wind.at(alt)
+        if self.gravity.curved and wind.any():
+            wind = self.gravity.local_to_frame(com, wind)
         self.wind_now = wind
         v_air_w = v_com - wind
         f_a, tau_a, q, mach = self.aero.forces(
@@ -451,6 +457,7 @@ class RocketSim:
             self.max_q = q
 
         self._mp_dirty = True
+        self._state_cache = None
         if data.ncon or self.legs_down or self.body_contact or not self.airborne:
             self._contacts()
 
@@ -496,10 +503,17 @@ class RocketSim:
 
     @property
     def state(self) -> State:
+        """Current state (cached until the next physics step)."""
+        if self._state_cache is not None:
+            return self._state_cache
+        self._state_cache = st = self._build_state()
+        return st
+
+    def _build_state(self) -> State:
         data = self.data
         R = self.rot
         com = data.qpos[:3] + R @ self.mp.cg
-        v_com = data.qvel[:3] + R @ np.cross(data.qvel[3:6], self.mp.cg)
+        v_com = data.qvel[:3] + R @ _cross_z(data.qvel[3:6], self.mp.cg_z)
         up = self.gravity.up(com)
         tilt = math.acos(max(-1.0, min(1.0, float(R[:, 2] @ up))))
         return State(

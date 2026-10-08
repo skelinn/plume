@@ -74,6 +74,153 @@ def sim(
 
 
 @app.command()
+def land(
+    controller: Annotated[str, typer.Option(help="pid | ppo")] = "pid",
+    stage: Annotated[str, typer.Option(help="curriculum stage name or index")] = "full_descent",
+    seed: int = 1,
+    episodes: int = 1,
+    run_dir: Annotated[Path, typer.Option(help="PPO run directory")] = Path("runs/ppo_landing"),
+    save: Annotated[Path | None, typer.Option(help="replay path (first episode)")] = None,
+):
+    """Fly the landing task with the PID/guidance autopilot or a trained PPO agent."""
+    from plume.envs.landing_env import AutopilotPolicy, LandingEnv
+    from plume.recording import save_replay
+    from plume.rl.evaluate import run_episodes, sb3_policy_factory
+
+    env = LandingEnv(record=True, fixed_stage=True)
+    names = [s.name for s in env.stages]
+    idx = int(stage) if stage.isdigit() else names.index(stage)
+    if controller == "pid":
+        make = AutopilotPolicy
+    else:
+        from plume.rl.train import load_trained
+
+        model, vecnorm = load_trained(run_dir)
+        make = sb3_policy_factory(model, vecnorm)
+    res = run_episodes(env, make, idx, episodes, seed=seed, controller=controller)
+    out = save or Path("runs") / f"land_{controller}_{names[idx]}_{seed}.plume.json.gz"
+    if env.last_replay is not None and episodes == 1:
+        save_replay(env.last_replay, out)
+        console.print(
+            _outcome_table(env.last_replay["meta"].get("outcome"), f"{controller} - {names[idx]}")
+        )
+        console.print(f"replay: [cyan]{out}[/]")
+    else:
+        console.print(res.row(), res.reasons)
+
+
+@app.command()
+def train(
+    config: Annotated[Path | None, typer.Option(help="training config YAML")] = None,
+    when_idle: Annotated[
+        bool, typer.Option("--when-idle", help="only train while the PC is idle")
+    ] = False,
+    status: Annotated[bool, typer.Option("--status", help="show progress and exit")] = False,
+    timesteps: Annotated[int | None, typer.Option(help="cap steps for this session")] = None,
+    device: Annotated[str | None, typer.Option(help="cuda | cpu")] = None,
+    fresh: Annotated[bool, typer.Option("--fresh", help="ignore existing checkpoints")] = False,
+):
+    """Train the PPO landing agent (curriculum, resumable, optionally idle-aware)."""
+    from plume.rl.train import TrainConfig, eta_seconds, read_state
+
+    cfg = TrainConfig.load(config)
+    if device:
+        cfg.device = device
+    run_dir = Path(cfg.run_dir)
+    if status:
+        st = read_state(run_dir)
+        table = Table(title=f"training: {run_dir}", show_header=False)
+        pct = 100 * st["timesteps"] / cfg.total_timesteps
+        table.add_row(
+            "progress", f"{st['timesteps']:,} / {cfg.total_timesteps:,} steps ({pct:.1f}%)"
+        )
+        table.add_row("curriculum stage", str(st["stage"]))
+        table.add_row("sessions", str(st.get("sessions", 0)))
+        last = st.get("last_session") or {}
+        if last:
+            table.add_row(
+                "last session",
+                f"{last.get('steps', 0):,} steps at {last.get('steps_per_second', 0):,.0f}/s on {last.get('device')}",
+            )
+        eta = eta_seconds(st, cfg.total_timesteps)
+        if eta == eta:  # not NaN
+            table.add_row("remaining (active time)", f"{eta / 3600:.1f} h")
+        if st.get("last_pause_reason"):
+            table.add_row("last pause", f"{st['last_pause_reason']} at {st.get('last_pause_time')}")
+        table.add_row("updated", str(st.get("updated", "-")))
+        console.print(table)
+        return
+    if fresh and run_dir.exists():
+        for f in ("model.zip", "vecnormalize.pkl", "state.json"):
+            (run_dir / f).unlink(missing_ok=True)
+    if when_idle:
+        from plume.rl.idle import IdleConfig, Supervisor
+
+        Supervisor(cfg, IdleConfig.load(), config_path=str(config) if config else None).run()
+    else:
+        from plume.rl.train import train as run_train
+
+        st = run_train(cfg, timesteps=timesteps)
+        console.print(f"trained to {st['timesteps']:,} steps, stage {st['stage']}")
+
+
+@app.command()
+def hop(
+    mission: Annotated[str, typer.Argument(help="mission preset name or YAML path")] = "demo_hop",
+    cargo: Annotated[float | None, typer.Option(help="override cargo mass, kg")] = None,
+    seed: int = 0,
+    out: Annotated[Path | None, typer.Option(help="replay output path")] = None,
+    live: Annotated[bool, typer.Option(help="stream to a running `plume viz`")] = False,
+):
+    """Fly a point-to-point cargo hop over terrain and score it."""
+    from plume.config import load_mission
+    from plume.missions.hop import run_mission
+
+    spec = load_mission(mission)
+    streamer, on_frame = _live(live)
+    if streamer:
+        console.print("[dim]streaming to the viewer...[/]")
+    with console.status(f"flying {spec.name} (planning ascent, then ~10 min of flight)..."):
+        run = run_mission(spec, seed=seed, cargo_mass=cargo, on_frame=on_frame)
+    if streamer:
+        streamer.end(run.recorder.meta.get("outcome"))
+    path = run.recorder.save(out or Path("runs") / f"hop_{spec.name}.plume.json.gz")
+    res = run.result
+    table = Table(title=f"{spec.name}: {spec.launch.name} -> {spec.target.name}", show_header=False)
+    table.add_row(
+        "result", "[green]landed on target[/]" if res.success else f"[red]{res.reason}[/]"
+    )
+    table.add_row(
+        "landing error", f"{res.landing_error_m:,.1f} m (radius {spec.target_radius:g} m)"
+    )
+    table.add_row("fuel used / left", f"{res.fuel_used_kg:,.0f} / {res.fuel_remaining_kg:,.0f} kg")
+    table.add_row(
+        "max cargo load", f"{res.max_cargo_g:.2f} g (limit {spec.guidance.cargo_g_limit:g} g)"
+    )
+    table.add_row("flight time", f"{res.flight_time_s / 60:.1f} min")
+    table.add_row("apogee", f"{res.apogee_km:,.0f} km")
+    table.add_row(
+        "touchdown",
+        f"{res.touchdown_vz_mps:.2f} m/s down, {res.touchdown_vh_mps:.2f} m/s across, {res.ground_slope_deg:.1f} deg slope",
+    )
+    table.add_row("score", f"[bold]{res.score:.1f}[/]")
+    console.print(table)
+    console.print(f"replay: [cyan]{path}[/]")
+
+
+@app.command()
+def bench(
+    episodes: Annotated[int, typer.Option(help="episodes per stage and controller")] = 200,
+    run_dir: Path = Path("runs/ppo_landing"),
+    readme: Annotated[bool, typer.Option(help="write the table into README.md")] = True,
+):
+    """PID vs PPO on every curriculum stage -> results table (and README)."""
+    from plume.rl.benchmark import run_benchmark
+
+    run_benchmark(episodes=episodes, run_dir=run_dir, update_readme=readme, console=console)
+
+
+@app.command()
 def viz(
     host: str = "127.0.0.1",
     port: int = 8765,

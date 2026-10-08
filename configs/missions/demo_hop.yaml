@@ -1,0 +1,32 @@
+# Point-to-point cargo hop: ~750 km from a plateau launch pad (A) to unprepared
+# ground (B), over the bundled procedural terrain.
+name: demo_hop
+description: 250 kg cargo, Pad A -> Site B (749.5 km), light wind at both ends.
+vehicle: cargo_hopper
+cargo_mass: 250
+terrain:
+  base: demo_region
+  launch_tile: demo_pad_a
+  landing_tile: demo_lz_b
+launch: {name: Pad A, u: 0.0, v: 0.0}
+target: {name: Site B, u: 730000.0, v: 170000.0}
+target_radius: 50.0
+world:
+  gravity: spherical
+  atmosphere: true
+  ground: none
+  dt: 0.01
+  wind: {speed: 5.0, from_deg: 250, turbulence: 0.6, gust_rate: 0.05, gust_max: 3.0}
+guidance:
+  cargo_g_limit: 6.0
+  rise_time: 6.0
+  kick_time: 6.0
+  kick_angle_deg: null       # optimised before flight
+  entry_altitude: 60000.0
+  entry_speed: 1400.0
+  max_flight_path_deg: 38.0
+scoring:
+  success_points: 100
+  accuracy_points: 50
+  fuel_points: 30
+  g_penalty_per_g: 10

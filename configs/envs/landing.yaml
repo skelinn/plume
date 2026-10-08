@@ -1,0 +1,25 @@
+# Powered-landing environment ("Plume/Landing-v0").
+vehicle: lander_small
+control_dt: 0.05        # 20 Hz agent / autopilot
+physics_dt: 0.01        # 100 Hz RK4 (tests use 200 Hz)
+max_time: 150.0
+pad_radius: 10.0
+world:
+  gravity: flat
+  atmosphere: true
+  ground: plane
+success:
+  max_vertical_speed: 2.0
+  max_horizontal_speed: 1.0
+  max_tilt_deg: 10.0
+  settle_time: 1.0
+reward:
+  success_bonus: 100.0
+  accuracy_bonus: 50.0
+  crash_penalty: 100.0
+  crash_speed_penalty: 2.0
+  fail_penalty: 150.0      # timeout / leaving the box must not beat trying to land
+  partial_landing: 50.0    # gentle, upright touchdown that misses a criterion
+  fuel_weight: 0.01
+  rcs_weight: 0.005
+curriculum: curriculum   # configs/envs/curriculum.yaml

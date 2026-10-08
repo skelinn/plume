@@ -1,0 +1,25 @@
+# PPO on Plume/Landing-v0 with curriculum (see configs/envs/curriculum.yaml).
+env: landing
+run_dir: runs/ppo_landing
+total_timesteps: 50_000_000      # accumulated across idle-aware sessions
+n_envs: 48                       # environments ...
+n_workers: 12                    # ... spread over this many processes (leaves CPU for the desktop)
+device: cuda                     # gradient updates on the GPU, rollouts on a CPU copy (HybridPPO)
+seed: 0
+checkpoint_every: 1_000_000      # environment steps
+ppo:
+  n_steps: 512                   # per env -> 24,576 samples per update
+  batch_size: 8192
+  n_epochs: 5
+  learning_rate: 3.0e-4
+  gamma: 0.995
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.0
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  target_kl: 0.03
+policy:
+  net_arch: [256, 256]
+  log_std_init: -0.7
+  activation: tanh

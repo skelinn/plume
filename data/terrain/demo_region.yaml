@@ -1,0 +1,15 @@
+name: demo_region
+x_min: -60000.0
+x_max: 820000.0
+y_min: -120000.0
+y_max: 280000.0
+site_a:
+- 0.0
+- 0.0
+site_b:
+- 730000.0
+- 170000.0
+resolution_m: 1000.0
+image: demo_region.png
+z_min: 0.0
+z_max: 1841.1841531944947

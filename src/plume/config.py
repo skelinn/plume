@@ -293,7 +293,7 @@ class StageSpec(Spec):
     altitude: Range = (50.0, 100.0)  # m above the pad (footpads)
     offset: Range = (0.0, 5.0)  # horizontal distance from the pad, m
     descent_speed: Range = (0.0, 5.0)  # m/s, positive = down
-    horizontal_speed: Range = (0.0, 1.0)
+    horizontal_speed: Range = (0.0, 1.0)  # deviation from the mean wind, m/s
     tilt_deg: Range = (0.0, 3.0)  # attitude error from engine-first
     rate_deg_s: Range = (0.0, 2.0)
     prop_fraction: Range = (0.3, 0.5)
@@ -323,9 +323,12 @@ class RewardSpec(Spec):
     accuracy_bonus: float = 50.0
     crash_penalty: float = 100.0
     crash_speed_penalty: float = 2.0  # per m/s of impact speed above the limit
-    fail_penalty: float = 60.0  # timeout / out of bounds / tipped after touchdown
+    fail_penalty: float = 150.0  # timeout / out of bounds: worse than crashing
+    partial_landing: float = 50.0  # gentle upright touchdown that misses a criterion
     fuel_weight: float = 0.01  # per kg
     rcs_weight: float = 0.005  # per step at full RCS
+    track_weight: float = 0.3  # dense: per (m/s of error vs the reference descent) per second
+    time_weight: float = 1.0  # dense: per second airborne (finish the job)
     w_distance: float = 1.0  # potential: per 50 m horizontal miss
     w_velocity: float = 1.0  # potential: per 20 m/s velocity error vs reference profile
     w_tilt: float = 1.0  # potential: per radian
@@ -334,9 +337,15 @@ class RewardSpec(Spec):
 
 class LandingEnvSpec(Spec):
     vehicle: str = "lander_small"
+    action_mode: Literal["guidance", "direct"] = Field(
+        "guidance",
+        description="guidance: throttle + thrust-axis tilt (inner attitude loop); "
+        "direct: throttle + gimbal + RCS",
+    )
+    max_tilt_deg: float = Field(30.0, gt=0, le=89, description="guidance mode: axis tilt limit")
     control_dt: float = 0.05
     physics_dt: float = 0.01
-    max_time: float = 150.0
+    max_time: float = 150.0  # hard cap; each episode also gets 20 s + altitude / 8 m/s
     pad_radius: float = 10.0
     world: WorldSpec = Field(default_factory=WorldSpec)
     success: SuccessSpec = Field(default_factory=SuccessSpec)
@@ -351,3 +360,65 @@ def load_landing_env(path_or_name: str | Path = "landing") -> LandingEnvSpec:
     if isinstance(cur, str):  # reference to a separate curriculum file
         data["curriculum"] = load_yaml(_resolve(cur, "envs"))
     return LandingEnvSpec.model_validate(data)
+
+
+# --------------------------------------------------------------------------- cargo hop missions
+class SiteSpec(Spec):
+    name: str
+    u: float  # map east (m) from the launch-site origin
+    v: float  # map north (m)
+
+
+class MissionTerrainSpec(Spec):
+    base: str = "demo_region"
+    launch_tile: str | None = "demo_pad_a"
+    landing_tile: str | None = "demo_lz_b"
+
+
+class HopGuidanceSpec(Spec):
+    cargo_g_limit: float = Field(6.0, gt=1, description="throttle back to keep cargo below this")
+    rise_time: float = Field(
+        6.0, description="vertical rise before the kick (optimised if kick is null)"
+    )
+    kick_time: float = 6.0
+    kick_angle_deg: float | None = Field(
+        None, description="null = optimise rise + kick before flight"
+    )
+    entry_altitude: float = Field(60_000.0, description="start the entry burn below this")
+    entry_speed: float = Field(1500.0, description="entry burn target speed, m/s")
+    meco_bias: float = Field(
+        400.0, description="aim this far past the target at MECO (the entry burn trims it), m"
+    )
+    max_flight_path_deg: float = Field(
+        45.0, description="planner: cap on the MECO flight-path angle"
+    )
+
+
+class ScoringSpec(Spec):
+    success_points: float = 100.0
+    accuracy_points: float = 50.0  # scaled by 1 - error / target radius
+    fuel_points: float = 30.0  # scaled by remaining-propellant fraction
+    g_penalty_per_g: float = 10.0  # per g above the cargo limit
+    time_penalty_per_min: float = 0.0
+
+
+class MissionSpec(Spec):
+    name: str
+    description: str = ""
+    vehicle: str = "cargo_hopper"
+    cargo_mass: float | None = None
+    terrain: MissionTerrainSpec = Field(default_factory=MissionTerrainSpec)
+    launch: SiteSpec
+    target: SiteSpec
+    target_radius: float = 50.0
+    world: WorldSpec = Field(
+        default_factory=lambda: WorldSpec(gravity="spherical", ground="none", dt=0.01)
+    )
+    guidance: HopGuidanceSpec = Field(default_factory=HopGuidanceSpec)
+    scoring: ScoringSpec = Field(default_factory=ScoringSpec)
+    max_time: float = 1500.0
+    record_every: int = 5  # physics steps between replay frames (x control decimation)
+
+
+def load_mission(path_or_name: str | Path) -> MissionSpec:
+    return MissionSpec.model_validate(load_yaml(_resolve(path_or_name, "missions")))

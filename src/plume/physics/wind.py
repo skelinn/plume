@@ -106,6 +106,12 @@ class WindModel:
             self._next_gust = self._draw_gust_time(self._next_gust)
         self._gusts = [g for g in self._gusts if self.t <= g.t_start + g.duration]
 
+    def mean_at(self, altitude: float) -> np.ndarray:
+        """Forecast (mean) wind at an altitude: no turbulence or gusts."""
+        if self.speed <= 0:
+            return np.zeros(3)
+        return self.speed * self.profile(altitude) * self._mean_dir
+
     def at(self, altitude: float) -> np.ndarray:
         """Wind velocity (m/s, world frame) at the current time and given altitude."""
         if not self.enabled:

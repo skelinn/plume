@@ -114,7 +114,7 @@ def build_mjcf(
         )
         geoms.append(
             f'<geom name="foot{k}" type="sphere" pos="{_v(*foot)}" size="{_f(fr)}" '
-            'friction="1.0 0.005 0.0001" solref="0.05 1" rgba="0.1 0.1 0.1 1"/>'
+            'friction="1.0 0.005 0.0001" solref="0.05 2" rgba="0.1 0.1 0.1 1"/>'
         )
 
     asset_xml = f"<asset>{''.join(assets)}</asset>" if assets else ""

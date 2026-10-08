@@ -21,8 +21,12 @@ class AttitudeController:
         bandwidth: float = 2.5,
         damping: float = 0.9,
         roll_damping: float = 2.0,
+        max_rate_deg_s: float = 20.0,
+        deadband_deg: float = 0.5,
     ):
         self.sim = sim
+        self.max_rate = np.radians(max_rate_deg_s)
+        self.deadband = np.radians(deadband_deg)
         self.wn = bandwidth
         self.zeta = damping
         self.roll_kd = roll_damping
@@ -45,13 +49,26 @@ class AttitudeController:
         angle = math.atan2(s, c)
         return R.T @ (axis / s * angle)
 
-    def desired_torque(self, state: State, desired_axis_world: np.ndarray) -> np.ndarray:
+    def desired_torque(
+        self, state: State, desired_axis_world: np.ndarray, max_rate: float | None = None
+    ) -> np.ndarray:
+        """Cascaded law: pointing error -> (rate-limited) desired body rate -> torque.
+
+        In the linear region this is a PD with natural frequency ``bandwidth`` and
+        damping ``damping``; for large errors the slew rate is capped at ``max_rate``
+        so big manoeuvres (e.g. a flip) do not saturate the actuators for long.
+        """
         e = self.pointing_error(state, desired_axis_world)
         I = self.sim.mp.inertia
         w = state.omega
-        kp = self.wn**2
-        kd = 2 * self.zeta * self.wn
-        alpha = np.array([kp * e[0] - kd * w[0], kp * e[1] - kd * w[1], -self.roll_kd * w[2]])
+        k_w = 2 * self.zeta * self.wn
+        k_e = self.wn / (2 * self.zeta)
+        w_des = k_e * np.array([e[0], e[1], 0.0])
+        rate_cap = self.max_rate if max_rate is None else max_rate
+        n = float(np.linalg.norm(w_des))
+        if n > rate_cap:
+            w_des *= rate_cap / n
+        alpha = np.array([k_w * (w_des[0] - w[0]), k_w * (w_des[1] - w[1]), -self.roll_kd * w[2]])
         return I * alpha
 
     def allocate(
@@ -76,6 +93,20 @@ class AttitudeController:
         rcs = np.divide(remaining, cap, out=np.zeros(3), where=cap > 0)
         return np.clip(gimbal, -1, 1), np.clip(rcs, -1, 1)
 
-    def __call__(self, state: State, desired_axis_world: np.ndarray, thrust: float):
-        tau = self.desired_torque(state, desired_axis_world)
+    def __call__(
+        self,
+        state: State,
+        desired_axis_world: np.ndarray,
+        thrust: float,
+        max_rate: float | None = None,
+    ):
+        if thrust <= 1.0 and self.deadband > 0:
+            # engine off: coast inside a small deadband instead of chattering the RCS
+            e = self.pointing_error(state, desired_axis_world)
+            if (
+                np.linalg.norm(e[:2]) < self.deadband
+                and np.linalg.norm(state.omega) < 0.2 * self.deadband
+            ):
+                return np.zeros(2), np.zeros(3)
+        tau = self.desired_torque(state, desired_axis_world, max_rate)
         return self.allocate(state, tau, thrust)

@@ -37,6 +37,9 @@ class FlatGravity:
     def up(self, p: np.ndarray) -> np.ndarray:
         return np.array([0.0, 0.0, 1.0])
 
+    def local_to_frame(self, p: np.ndarray, vec: np.ndarray) -> np.ndarray:
+        return vec
+
 
 class SphericalGravity:
     """Point-mass Earth (non-rotating) centred at (0, 0, -R)."""
@@ -62,6 +65,18 @@ class SphericalGravity:
     def up(self, p: np.ndarray) -> np.ndarray:
         r = p - self.center
         return r / np.linalg.norm(r)
+
+    def local_to_frame(self, p: np.ndarray, vec: np.ndarray) -> np.ndarray:
+        """Rotate a vector given in local ENU at ``p`` into the frame (minimal rotation
+        taking the launch-site vertical onto the local vertical)."""
+        up = self.up(p)
+        axis = np.array([-up[1], up[0], 0.0])  # e_z x up
+        s = float(np.linalg.norm(axis))
+        if s < 1e-12:
+            return vec
+        k = axis / s
+        c = float(up[2])
+        return vec * c + np.cross(k, vec) * s + k * float(k @ vec) * (1 - c)
 
     # --- map coordinates (azimuthal-equidistant about the launch site) ---------
     def surface_point(self, u: float, v: float, h: float = 0.0) -> np.ndarray:

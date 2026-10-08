@@ -62,8 +62,10 @@ class PointMassSim:
         cd_scale: float | None = None,
         prop_mass: float | None = None,
         cargo_mass: float | None = None,
+        wind_fn: Callable[[np.ndarray, float], np.ndarray] | None = None,
     ):
         self.vehicle = vehicle
+        self.wind_fn = wind_fn  # (position, altitude) -> air velocity, frame coordinates
         self.world = world or WorldSpec()
         self.gravity = gravity_from_world(self.world)
         self.atmosphere = Atmosphere(self.world.atmosphere, self.world.temperature_offset)
@@ -101,7 +103,8 @@ class PointMassSim:
         atm = self.atmosphere.at(alt)
         m = self.m_dry + max(prop, 0.0)
         thrust, mdot = self._thrust_mdot(t, throttle, atm.pressure, prop)
-        speed = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+        va = v - self.wind_fn(r, alt) if self.wind_fn is not None else v
+        speed = math.sqrt(va[0] * va[0] + va[1] * va[1] + va[2] * va[2])
         a_ng = np.zeros(3)
         if thrust > 0:
             a_ng += thrust / m * direction
@@ -109,7 +112,7 @@ class PointMassSim:
             mach = speed / atm.speed_of_sound
             ca = self.aero.axial_coefficient(mach, not tail_first)
             drag = 0.5 * atm.density * speed * speed * ca * self.aero.ref_area
-            a_ng -= drag / m * (v / speed)
+            a_ng -= drag / m * (va / speed)
         return v, a_ng + self.gravity.accel(r), -mdot, thrust, a_ng, alt
 
     def run(
@@ -127,6 +130,9 @@ class PointMassSim:
         ground_altitude: float = 0.0,
         t0: float = 0.0,
         record_every: int = 1,
+        dt_fn: Callable[[float, np.ndarray, np.ndarray], float] | None = None,
+        stop_fn: Callable[[float, np.ndarray, np.ndarray, float], bool] | None = None,
+        prop0: float | None = None,
     ) -> PMTrajectory:
         """Integrate with fixed-step RK4 until ``t_end`` or ground impact.
 
@@ -135,7 +141,7 @@ class PointMassSim:
         """
         r = np.asarray(r0, dtype=float).copy()
         v = np.asarray(v0, dtype=float).copy()
-        prop = float(self.prop0)
+        prop = float(self.prop0 if prop0 is None else prop0)
         up0 = self.gravity.up(r)
         rail = np.asarray(rail_dir, dtype=float) if rail_dir is not None else up0
         rail = rail / np.linalg.norm(rail)
@@ -157,7 +163,7 @@ class PointMassSim:
         n = 0
         left_ground = False
         while t < t_end - 1e-12:
-            h = min(dt, t_end - t)
+            h = min(dt_fn(t, r, v) if dt_fn else dt, t_end - t)
             thr = thr_fn(t, r, v)
             d = dir_fn(t, r, v)
             k1 = self._derivs(t, r, v, prop, thr, d, tail_first)
@@ -204,6 +210,8 @@ class PointMassSim:
             v = v_new
             t += h
             n += 1
+            if stop_fn is not None and stop_fn(t, r, v, prop):
+                break
             if (
                 stop_on_ground
                 and left_ground
