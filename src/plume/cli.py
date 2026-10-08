@@ -447,6 +447,58 @@ def mc(
     console.print(f"report: [cyan]{report}[/]   data: [cyan]{out_dir}[/]")
 
 
+@app.command("vv-report")
+def vv_report(
+    run: Annotated[
+        bool, typer.Option("--run/--no-run", help="run the test suite (else read --junit)")
+    ] = True,
+    junit: Annotated[
+        Path | None,
+        typer.Option(help="JUnit XML written by --run / read by --no-run [runs/vv/junit.xml]"),
+    ] = None,
+    out: Annotated[Path | None, typer.Option(help="HTML report path [docs/vv/report.html]")] = None,
+    nasa: Annotated[
+        bool, typer.Option("--nasa/--no-nasa", help="run the NASA check cases (~1-2 min)")
+    ] = True,
+):
+    """Verification & validation report: tests by model area, NASA check cases, model
+    documentation status and Monte Carlo headline numbers, as one HTML page."""
+    from plume.analysis.vv import AREAS, build_report
+
+    try:
+        res = build_report(run=run, junit=junit, out=out, nasa=nasa, log=console.print)
+    except (FileNotFoundError, RuntimeError) as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(2) from None
+    if res["exit_code"] not in (None, 0, 1):
+        console.print(f"[yellow]pytest exited with code {res['exit_code']}[/]")
+    table = Table(title="Verification", show_header=True)
+    for col in ("area", "passed", "failed", "skipped", "total"):
+        table.add_column(col, justify="left" if col == "area" else "right")
+    for area, c in res["areas"].items():
+        failed = f"[red]{c['failed']}[/]" if c["failed"] else "0"
+        table.add_row(AREAS[area], str(c["passed"]), failed, str(c["skipped"]), str(c["total"]))
+    table.add_row(
+        "[bold]all[/]",
+        str(res["passed"]),
+        str(res["failed"]),
+        str(res["skipped"]),
+        str(res["total"]),
+    )
+    console.print(table)
+    if res["nasa"] is not None:
+        ok = sum(
+            1
+            for c in res["nasa"]
+            if not c["error"] and c["vars"] and all(v["passed"] for v in c["vars"])
+        )
+        console.print(f"NASA check cases passed: {ok} / {len(res['nasa'])}")
+    console.print("validation against real data: [yellow]pending[/] for every model")
+    console.print(f"report: [cyan]{res['out']}[/]   junit: [cyan]{res['junit']}[/]")
+    if res["failed"]:
+        raise typer.Exit(1)
+
+
 try:  # real-terrain tools (plume terrain fetch | info | hazard)
     from plume.terrain.cli import terrain_app
 

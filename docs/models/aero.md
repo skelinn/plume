@@ -1,12 +1,10 @@
 # High-fidelity aerodynamics: database, generator, verification
 
-Status: **implemented, verified against public NASA wind-tunnel data at M 2.86
-(normal force, centre of pressure, axial force) and against exact theory
-(Taylor-Maccoll cones, Rossow ogive charts, Love base pressure, slender-body
-limit)**.  Subsonic/transonic body data and finned-body data are *not yet*
-compared (see [Verification gaps](#verification-gaps)).
+**Code:** `src/plume/physics/aerodb.py`, `src/plume/physics/aero_gen/` (files listed below)
+**Selection:** `AeroSpec.model: auto | strip | database`. With `auto`, high fidelity uses this database and fast mode uses the strip model (`src/plume/physics/aero.py`).
+**Verification status:** verified against public NASA wind-tunnel data at M 2.86 (normal force, centre of pressure, axial force) and against exact theory (Taylor-Maccoll cones, Rossow ogive charts, Love base pressure, slender-body limit) (`tests/test_aerodb.py`). Subsonic/transonic body data and finned-body data are not yet compared (see [Verification gaps](#verification-gaps)). Validation against flight data is pending.
 
-Code:
+Files:
 
 | file | content |
 |---|---|

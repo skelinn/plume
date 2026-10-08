@@ -5,8 +5,8 @@ elevation model, projected into the mission's local map frame. This page documen
 data source and licence, the projection, the resampling, the accuracy, how synthetic
 detail is flagged, landing-hazard analysis, the bundled real route, and the limitations.
 
-Code: `src/plume/terrain/dem.py` (library), `src/plume/terrain/cli.py` (`plume terrain …`),
-tests: `tests/test_dem.py`.
+**Code:** `src/plume/terrain/dem.py` (library), `src/plume/terrain/cli.py` (`plume terrain …`)
+**Verification status:** verified, covering projection round-trips and geodesic distances, tile naming, mosaicking and resampling against an analytic surface, synthetic-detail flagging and hazard maps (`tests/test_dem.py`). Validation of the DEM against surveyed heights is pending.
 
 ## Data sources
 
