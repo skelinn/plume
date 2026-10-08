@@ -12,6 +12,7 @@ Endpoints
 ``POST /api/live/{channel}``           sims push ``{"meta"}`` / ``{"frames"}`` / ``{"end"}`` messages
 ``GET /api/live``                      state of the live channels
 ``WS /ws/live?channel=default``        fan-out of the above to viewers
+``GET /planner``, ``/api/planner/...``  mission planner (see :mod:`plume.viz.planner_api`)
 
 Replay and terrain ids are POSIX paths relative to the directory they were found in
 (terrain ids also resolve by bare file stem or by the ``name:`` key of the YAML, which is
@@ -48,6 +49,7 @@ STATIC_DIR = Path(__file__).with_name("static")
 
 DEFAULT_REPLAY_DIRS = ("runs", "data/replays")
 DEFAULT_TERRAIN_DIRS = ("data/terrain", "runs/fixtures/terrain", "runs/terrain")
+DEFAULT_PLANNER_DIR = "runs/planner"  # planner jobs: missions, flat terrain, replays
 REPLAY_SUFFIXES = (".plume.json.gz", ".plume.json")
 MAX_LIVE_FRAMES = 400_000  # per-channel history kept for late-joining viewers
 
@@ -156,9 +158,16 @@ class _Subscriber:
 def create_app(
     replay_dirs: Iterable[str | Path] | None = None,
     terrain_dirs: Iterable[str | Path] | None = None,
+    planner_dir: str | Path | None = DEFAULT_PLANNER_DIR,
 ) -> FastAPI:
     rdirs = _as_paths(replay_dirs, DEFAULT_REPLAY_DIRS)
     tdirs = _as_paths(terrain_dirs, DEFAULT_TERRAIN_DIRS)
+    pdir = Path(planner_dir) if planner_dir is not None else None
+    if pdir is not None:  # planner jobs write replays and terrain the viewer must find
+        if not any(_inside(r, pdir) for r in rdirs):
+            rdirs.append(pdir)
+        if not any(_inside(r, pdir / "terrain") for r in tdirs):
+            tdirs.append(pdir / "terrain")
     app = FastAPI(title="Plume viewer", docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.replay_dirs = rdirs
     app.state.terrain_dirs = tdirs
@@ -387,13 +396,18 @@ def create_app(
     @app.middleware("http")
     async def no_stale_assets(request: Request, call_next):
         resp = await call_next(request)
-        if request.url.path.startswith("/static/") or request.url.path == "/":
+        if request.url.path.startswith("/static/") or request.url.path in ("/", "/planner"):
             resp.headers["Cache-Control"] = "no-cache"
         return resp
 
     @app.get("/", include_in_schema=False)
     def index():
         return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
+
+    if pdir is not None:
+        from plume.viz.planner_api import register_planner
+
+        register_planner(app, STATIC_DIR, pdir, rdirs, pdir / "terrain")
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

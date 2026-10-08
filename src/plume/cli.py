@@ -520,6 +520,11 @@ def export_site_cmd(
     export_site(out, replay_dirs=(replays,), log=console.print)
 
 
+from plume.analysis.safety_cli import safety as _safety_cmd  # noqa: E402
+
+app.command("safety")(_safety_cmd)
+
+
 try:  # real-terrain tools (plume terrain fetch | info | hazard)
     from plume.terrain.cli import terrain_app
 
