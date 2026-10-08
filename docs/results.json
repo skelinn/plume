@@ -1,0 +1,57 @@
+{
+  "episodes": 200,
+  "seed0": 50000,
+  "results": {
+    "pid": {
+      "hop_drop": {
+        "episodes": 200,
+        "success_rate": 1.0,
+        "success_ci95": 0.0,
+        "fuel_kg": 47.391646856361746,
+        "landing_error_m": 2.3555012487231517,
+        "touchdown_vz_mps": 0.786267530333178,
+        "reasons": {
+          "landed": 200
+        }
+      },
+      "low_descent": {
+        "episodes": 200,
+        "success_rate": 0.945,
+        "success_ci95": 0.031596452332500885,
+        "fuel_kg": 98.48849507629848,
+        "landing_error_m": 3.8398894184169996,
+        "touchdown_vz_mps": 0.7493877100469011,
+        "reasons": {
+          "landed": 189,
+          "missed": 11
+        }
+      },
+      "mid_descent": {
+        "episodes": 200,
+        "success_rate": 0.855,
+        "success_ci95": 0.048798686457731624,
+        "fuel_kg": 163.43565852821396,
+        "landing_error_m": 2.9683140557003256,
+        "touchdown_vz_mps": 0.754050213930166,
+        "reasons": {
+          "landed": 171,
+          "missed": 29
+        }
+      },
+      "full_descent": {
+        "episodes": 200,
+        "success_rate": 0.425,
+        "success_ci95": 0.06851244412513685,
+        "fuel_kg": 227.8705235975864,
+        "landing_error_m": 3.705170285227683,
+        "touchdown_vz_mps": 0.7730424159527474,
+        "reasons": {
+          "landed": 85,
+          "missed": 106,
+          "not_at_rest": 7,
+          "hard_horizontal": 2
+        }
+      }
+    }
+  }
+}

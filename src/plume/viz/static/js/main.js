@@ -333,11 +333,13 @@ const app = {
   canvas: () => manager.primary?.canvas,
   renderAt: (t, anim) => { S.t = t; manager.render(t, anim); },
   async openForCapture() {
-    const id = params.get('replay');
-    if (!id) throw new Error('capture mode needs ?replay=<id>');
-    const replays = [await fetchReplay(id)];
+    // ?replay=<id> for one flight, or ?compare=<idA>,<idB> for side-by-side capture
+    const cmp = params.get('compare');
+    const ids = cmp ? cmp.split(',').slice(0, 2) : [params.get('replay')];
+    if (!ids[0]) throw new Error('capture mode needs ?replay=<id> or ?compare=<a>,<b>');
+    const replays = await Promise.all(ids.map((id) => fetchReplay(id)));
     manager.camMode = S.cam;
-    await install(replays, [id]);
+    await install(replays, ids);
     S.playing = false;
     hideOverlay();
   },

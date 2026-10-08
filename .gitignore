@@ -17,3 +17,4 @@ node_modules/
 !docs/assets/*.plume.json.gz
 !data/replays/*.plume.json.gz
 .DS_Store
+.claude/

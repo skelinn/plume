@@ -8,7 +8,7 @@
 // `await ready`, then for i in 0..frameCount-1: `await seek(i)` and screenshot the page.
 
 export function setupCapture(app, params) {
-  const fps = Math.max(1, +params.get('fps') || 20);
+  const fps = Math.max(0.01, +params.get('fps') || 20); // fractional rates speed up long flights
   const cap = { ready: null, frameCount: 0, fps, t0: 0, t1: 0, canvas: null, time: (i) => cap.t0 + i / fps, seek: null };
   window.plumeCapture = cap;
 

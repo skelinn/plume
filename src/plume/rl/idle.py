@@ -214,12 +214,14 @@ class Supervisor:
         config_path: str | None = None,
         detector: BusyDetector | None = None,
         log=print,
+        bench_on_finish: bool = True,
     ):
         self.train_cfg = train_cfg
         self.idle_cfg = idle_cfg
         self.config_path = config_path
         self.detector = detector or BusyDetector(idle_cfg)
         self.run_dir = Path(train_cfg.run_dir)
+        self.bench_on_finish = bench_on_finish
         self.proc: subprocess.Popen | None = None
         self._print = log
         self._last_wait: str | None = None
@@ -288,9 +290,10 @@ class Supervisor:
                     self._last_wait = None
                 elif self.proc is None:
                     why = "; ".join(reasons) if busy else "waiting for the PC to stay idle"
-                    if why != self._last_wait:
+                    key = re.sub(r"\d+", "#", why)  # ignore changing percentages
+                    if key != self._last_wait:
                         self.log(f"[idle] {why}")
-                        self._last_wait = why
+                        self._last_wait = key
                     state = read_state(self.run_dir)
                     state["waiting_reason"] = why
                     write_state(self.run_dir, state)
@@ -298,4 +301,13 @@ class Supervisor:
         finally:
             if self.proc is not None:
                 self._stop_worker("supervisor exiting")
-        self.log("[idle] finished" if self.done() else "[idle] stopped")
+        if self.done():
+            self.log("[idle] training finished")
+            if self.bench_on_finish:
+                self.log("[idle] running the PID vs PPO benchmark (README table)")
+                from plume.rl.benchmark import run_benchmark
+
+                run_benchmark(episodes=200, run_dir=self.run_dir, update_readme=True)
+                self.log("[idle] benchmark written to README.md and docs/results.json")
+        else:
+            self.log("[idle] stopped")
