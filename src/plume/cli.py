@@ -512,7 +512,13 @@ def vv_report(
             if not c["error"] and c["vars"] and all(v["passed"] for v in c["vars"])
         )
         console.print(f"NASA check cases passed: {ok} / {len(res['nasa'])}")
-    console.print("validation against real data: [yellow]pending[/] for every model")
+    if res.get("validated"):
+        console.print(
+            f"validated against real flights (within stated envelopes): "
+            f"[green]{', '.join(res['validated'])}[/]; all other models pending"
+        )
+    else:
+        console.print("validation against real data: [yellow]pending[/] for every model")
     console.print(f"report: [cyan]{res['out']}[/]   junit: [cyan]{res['junit']}[/]")
     if res["failed"]:
         raise typer.Exit(1)

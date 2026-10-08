@@ -72,6 +72,155 @@ def flightlog_inspect(
     )
 
 
+# ----------------------------------------------------------------------------- predict / validate
+def predict_cmd(
+    vehicle: Annotated[str, typer.Argument(help="vehicle preset or YAML")] = "hobby_rocket",
+    motor: Annotated[
+        str | None, typer.Option(help="motor .eng file or name in data/motors (e.g. H180)")
+    ] = None,
+    flight_id: Annotated[
+        str | None, typer.Option(help="name of the flight [<vehicle>_<date>]")
+    ] = None,
+    runs: Annotated[int, typer.Option(help="Monte Carlo flights")] = 200,
+    seed: int = 0,
+    wind: Annotated[float, typer.Option(help="mean wind at 10 m, m/s (forecast)")] = 3.0,
+    wind_from: Annotated[float, typer.Option(help="direction the wind comes from, deg")] = 270.0,
+    rail: Annotated[float, typer.Option(help="launch rail length, m")] = 1.5,
+    rail_tilt: Annotated[float, typer.Option(help="rail tilt from vertical, deg")] = 2.0,
+    rail_azimuth: Annotated[
+        float | None, typer.Option(help="tilt direction, deg from north [into the wind]")
+    ] = None,
+    temperature: Annotated[
+        float, typer.Option(help="temperature offset vs standard atmosphere, K")
+    ] = 0.0,
+    cd_sigma: Annotated[float, typer.Option(help="drag uncertainty, 1 sigma fraction")] = 0.10,
+    impulse_sigma: Annotated[float, typer.Option(help="motor impulse, 1 sigma")] = 0.03,
+    workers: Annotated[int, typer.Option(help="parallel processes (max 4)")] = 2,
+    out_dir: Annotated[Path, typer.Option(help="where to write the prediction")] = Path(
+        "docs/predictions"
+    ),
+):
+    """Pre-flight prediction with Monte Carlo bands (apogee, speeds, landing dispersion).
+
+    Record it BEFORE the flight (commit the files): comparing the flight with a prediction
+    made beforehand is the honest validation test."""
+    from plume.config import load_vehicle
+    from plume.flightdata.predict import (
+        METRICS,
+        Dispersions,
+        LaunchConditions,
+        predict,
+        with_motor,
+        write_prediction,
+    )
+
+    v = load_vehicle(vehicle)
+    notes = []
+    if motor:
+        v, notes = with_motor(v, motor)
+    launch = LaunchConditions(
+        rail_length=rail,
+        rail_tilt_deg=rail_tilt,
+        rail_azimuth_deg=rail_azimuth,
+        wind_speed_mps=wind,
+        wind_from_deg=wind_from,
+        temperature_offset_k=temperature,
+    )
+    disp = Dispersions(cd=cd_sigma, impulse=impulse_sigma)
+    with console.status(f"flying {runs} Monte Carlo flights ({min(workers, 4)} processes)..."):
+        p = predict(
+            v,
+            launch,
+            disp,
+            runs=runs,
+            seed=seed,
+            workers=workers,
+            flight_id=flight_id,
+            motor_notes=notes,
+        )
+    table = Table(title=f"prediction {p.meta['flight_id']}: {v.name}")
+    for col in ("quantity", "nominal", "95 % band", "median"):
+        table.add_column(col, justify="left" if col == "quantity" else "right")
+    for key, (label, unit, fmt) in METRICS.items():
+        if key in p.summary:
+            b = p.summary[key]
+            table.add_row(
+                f"{label} ({unit})" if unit else label,
+                f"{p.nominal[key]:{fmt}}",
+                f"{b['p2.5']:{fmt}} - {b['p97.5']:{fmt}}",
+                f"{b['p50']:{fmt}}",
+            )
+    console.print(table)
+    a, b = p.landing["semi_axes_m"]
+    console.print(
+        f"landing: mean {p.landing['center'][0]:+.0f} m E, {p.landing['center'][1]:+.0f} m N; "
+        f"95 % ellipse {a:.0f} x {b:.0f} m; 95 % within {p.landing['p95_distance_m']:.0f} m"
+    )
+    for n in notes:
+        console.print(f"[yellow]{n}[/]")
+    paths = write_prediction(p, out_dir)
+    console.print(f"prediction: [cyan]{paths['markdown']}[/]  data: [cyan]{paths['json']}[/]")
+    console.print("[bold]Commit these files before the flight.[/]")
+
+
+def validate_cmd(
+    csv: Annotated[Path, typer.Argument(help="flight computer CSV export")],
+    prediction: Annotated[Path, typer.Option(help="prediction .json made before the flight")],
+    flight_id: Annotated[str, typer.Option(help="name of this flight (record file name)")],
+    mapping: Annotated[str, typer.Option(help="column mapping name or YAML")] = "generic_altimeter",
+    flight_date: Annotated[
+        str | None,
+        typer.Option(help="when the flight happened, ISO 8601 UTC (e.g. 2026-11-02T15:30Z)"),
+    ] = None,
+    synthetic: Annotated[
+        bool,
+        typer.Option("--synthetic", help="the log is simulated: a rehearsal, never validation"),
+    ] = False,
+    notes: Annotated[str, typer.Option(help="free text for the record (weather, anomalies)")] = "",
+    out_root: Annotated[Path, typer.Option(help="records folder")] = Path("docs/validation"),
+):
+    """Compare a real flight with its prediction, calibrate, write a validation record."""
+    from plume.flightdata.predict import Prediction
+    from plume.flightdata.validation import MODEL_DOCS, build_record, write_record
+
+    pred = Prediction.load(prediction)
+    with console.status("importing, comparing and calibrating..."):
+        rec, cal, log = build_record(
+            csv,
+            mapping,
+            pred,
+            flight_id,
+            flight_date=flight_date,
+            synthetic=synthetic,
+            notes=notes,
+        )
+    paths = write_record(rec, cal, log, prediction, out_root)
+    table = Table(title=f"flight {flight_id} vs prediction {pred.meta['flight_id']}")
+    for col in ("quantity", "95 % band", "flight", "percentile", "inside"):
+        table.add_column(col, justify="left" if col == "quantity" else "right")
+    for r in rec["comparison"]:
+        table.add_row(
+            r["metric"],
+            f"{r['p2.5']:.4g} - {r['p97.5']:.4g}",
+            f"{r['observed']:.4g}",
+            "-" if r["percentile"] is None else f"{r['percentile']:.0f}",
+            "yes" if r["inside_95"] else "[red]no[/]",
+        )
+    console.print(table)
+    for model, verdict in rec["verdicts"].items():
+        colour = {"validated": "green", "discrepancy": "red"}.get(verdict, "yellow")
+        console.print(f"{MODEL_DOCS[model][1]}: [{colour}]{verdict}[/]")
+    if synthetic:
+        console.print("[yellow]synthetic log: recorded as a rehearsal, not validation[/]")
+    elif rec["prediction"]["blind"] is not True:
+        console.print(
+            "[yellow]not a blind test: give --flight-date, and record predictions before "
+            "flying, for a 'validated' verdict[/]"
+        )
+    console.print(f"record: [cyan]{paths['markdown']}[/]  data: [cyan]{paths['record']}[/]")
+    console.print("then: [cyan]plume vv-report[/] shows the model status with this evidence")
+
+
 # ----------------------------------------------------------------------------- hop rig
 @rig_app.command("plan")
 def rig_plan():
@@ -150,5 +299,7 @@ def rig_calibrate(
 
 def register(app: typer.Typer) -> None:
     """Attach the test-flight commands to the main ``plume`` app."""
+    app.command("predict")(predict_cmd)
+    app.command("validate")(validate_cmd)
     app.add_typer(flightlog_app, name="flightlog")
     app.add_typer(rig_app, name="rig")
