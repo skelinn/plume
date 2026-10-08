@@ -381,7 +381,10 @@ class UpperStageGuidance:
         # with tau adds ~ a tau of speed) and the flight-software cycle (cut when the
         # target would be crossed within the first half of the next cycle)
         _r, v = self.frame.to_inertial(st.com, st.vel_com, t)
-        e_rate = float(np.linalg.norm(v)) * sim.thrust / st.mass  # dE/dt, prograde thrust
+        # dE/dt = v . a_thrust: near burnout the thrust is well off the velocity (radial and
+        # plane corrections), so |v| |a| would overstate the tail-off and cut early
+        d_i = self.frame.world_to_eci_matrix(t) @ st.axis
+        e_rate = max(float(v @ d_i), 0.0) * sim.thrust / st.mass
         tail = e_rate * sim.nominal.engine.throttle_tau
         remaining = self.E_T - tail - self.energy(st)
         if remaining <= 0.5 * e_rate * self.control_dt:

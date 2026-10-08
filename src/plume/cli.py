@@ -238,7 +238,13 @@ def launch(
     streamer, on_frame = _live(live)
     with console.status(f"flying {spec.name} (ascent, staging, orbit and booster return)..."):
         run = run_launch(
-            spec, seed=seed, fidelity=fidelity, payload_mass=payload, on_frame=on_frame, dt=dt
+            spec,
+            seed=seed,
+            fidelity=fidelity,
+            payload_mass=payload,
+            on_frame=on_frame,
+            on_meta=streamer.start if streamer else None,
+            dt=dt,
         )
     if streamer:
         streamer.end(run.recorder.meta.get("outcome"))

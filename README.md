@@ -38,6 +38,7 @@ uv sync --all-extras                       # Python 3.11+, CUDA torch on Windows
 uv run plume hop demo_hop                  # 750 km cargo hop, fast fidelity (~1 min)
 uv run plume hop real_hop --fidelity high  # Spaceport America -> Burns Flat, verification-grade models (~5 min)
 uv run plume mc real_hop --runs 64         # Monte Carlo at high fidelity: success probability, dispersion, sensitivity
+uv run plume launch demo_orbit             # two-stage launch to orbit, booster flies back and lands (~2 min)
 uv run plume vv-report                     # verification report: tests, NASA check cases, model status
 uv run plume viz                           # viewer at http://localhost:8765
 ```
@@ -151,7 +152,25 @@ uv run plume calibrate data/flights/sample_flight.csv --mapping generic_altimete
 
 The bundled logs are synthetic "real" flights. A 6-DOF truth model with different drag, motor and parachute flew them through noisy, biased sensors. Calibration recovers the truth to within 1–3 % and cuts the apogee error from +134 m to −1.4 m.
 
-### 5 · Viewer
+### 5 · Orbit: two stages, booster back to the launch site
+
+```bash
+uv run plume launch demo_orbit                  # fast fidelity, ~2 min
+uv run plume launch demo_orbit --fidelity high  # rotating WGS-84 Earth, aero database, actuator models (~6 min)
+```
+
+A representative 23 t two-stage launcher (Electron / Falcon 1 class; a generic model, not a real product) puts 100 kg into a 200 × 250 km orbit inclined 40°. The stack flies as one rigid body; at staging each stage becomes its own simulator with the state copied and a spring impulse. Closed-loop guidance inserts the upper stage, and the first stage flips, burns back, re-enters and lands on a pad 1.5 km from the launch site:
+
+| | fast | high fidelity |
+|---|---:|---:|
+| orbit (target 200 × 250 km, 40°) | 199.7 × 246.8 km, 40.00° | 199.5 × 246.7 km, 39.98° |
+| upper-stage propellant left | 79 kg (2.5 %) | 102 kg (3.2 %) |
+| booster landing error / touchdown | 4.3 m / 1.2 m/s | 2.0 m / 1.1 m/s |
+| booster propellant left | 307 kg | 299 kg |
+
+These are single nominal runs, not a Monte Carlo campaign. Replays hold every vehicle (`meta.vehicles` + `tracks`); in the viewer, **Follow** (or `V`) switches the camera and telemetry between the upper stage and the booster. The models, guidance laws and verification are in [docs/models/staging_and_orbit.md](docs/models/staging_and_orbit.md).
+
+### 6 · Viewer
 
 `uv run plume viz` serves every replay under `runs/` and `data/replays/`.
 
@@ -163,6 +182,7 @@ The bundled logs are synthetic "real" flights. A 6-DOF truth model with differen
 | I | replay information: fidelity, models, outcome |
 | Q | rendering quality |
 | C / L | compare two flights / live stream |
+| V | follow the next vehicle (multi-stage replays) |
 
 ## Monte Carlo: how dependable is the cargo hop?
 
@@ -241,6 +261,7 @@ Each model has a page in [docs/models/](docs/models/README.md) covering its equa
 | Sensors and navigation | [navigation.md](docs/models/navigation.md) |
 | Real terrain | [terrain.md](docs/models/terrain.md) |
 | Cargo-hop guidance, plus Monte Carlo findings | [guidance.md](docs/models/guidance.md) |
+| Multi-stage vehicles, staging, orbital elements, orbit guidance and booster return | [staging_and_orbit.md](docs/models/staging_and_orbit.md) |
 
 `uv run pytest -q -n auto` runs the full suite (about 4 min), and `uv run pytest -m vv` runs the verification set.
 
@@ -293,7 +314,9 @@ world:
 | `configs/vehicles/cargo_hopper.yaml` | 8.3 t reusable cargo hopper with grid fins: 250 kg over about 750 km |
 | `configs/vehicles/lander_small.yaml` | 2.3 t VTVL test lander for the landing task |
 | `configs/vehicles/hobby_rocket.yaml` | 66 mm three-fin rocket on a 29 mm H motor |
+| `configs/vehicles/launcher_two_stage.yaml` | representative 23 t two-stage launcher with a returning first stage (stages bottom-up, payload, fairing) |
 | `configs/missions/{demo_hop,real_hop}.yaml` | synthetic-terrain and real-terrain cargo hops |
+| `configs/missions/demo_orbit.yaml` | launch to a 200 × 250 km, 40° orbit with booster return to LZ-1 |
 | `configs/dispersions/*.yaml` | Monte Carlo uncertainty sets |
 
 ## Architecture
@@ -306,6 +329,7 @@ src/plume/
                propulsion (engine, gimbal actuator, RCS PWM), slosh, sensors, recovery, mjcf
   control/     attitude, autopilot (landing), navigation (INS/GNSS EKF)
   missions/    hop (planner, autopilot), targeting (impact prediction), scoring
+  launcher/    multi-stage spec, stacked flight + separation, orbital elements, orbit guidance, RTLS
   analysis/    nasa_checkcases, montecarlo, vv (report)
   terrain/     heightmaps, Copernicus DEM, hazard maps
   envs/ rl/    Gymnasium landing env, hybrid PPO, idle supervisor, benchmark

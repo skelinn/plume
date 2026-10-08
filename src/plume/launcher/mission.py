@@ -144,6 +144,7 @@ def run_launch(
     launcher: LauncherSpec | None = None,
     record_every: int | None = None,
     stop_after_orbit: bool = False,
+    on_meta=None,
 ) -> LaunchRun:
     """Fly an orbital launch mission. ``dt`` overrides the physics step (coarse runs);
     ``stop_after_orbit`` ends the run once the upper stage's orbit is known (the booster
@@ -254,6 +255,8 @@ def run_launch(
         "liftoff_mass": sv.mass.dry + sv.prop_initial + sv.rcs.gas,
     }
     rec = Recorder(meta)
+    if on_meta is not None:  # live streaming: the primary (upper-stage) track only
+        on_meta({k: v for k, v in rec.meta.items() if k != "vehicles"})
     tracks = {"upper": rec, "booster": rec.add_track("booster", Recorder({}))}
     if fair is not None:
         tracks["fairing_a"] = rec.add_track("fairing_a", Recorder({}))
