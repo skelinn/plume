@@ -90,7 +90,7 @@ def markdown_table(results: dict, stages: list[str]) -> str:
             r = results.get(ctrl, {}).get(st)
             if not r:
                 continue
-            sr = f"**{100 * r['success_rate']:.0f}%** Â± {100 * r['success_ci95']:.0f}"
+            sr = f"**{100 * r['success_rate']:.0f}%** ± {100 * r['success_ci95']:.0f}"
             lines.append(
                 f"| {st} | {label} | {sr} | {fmt(r['fuel_kg'])} | {fmt(r['landing_error_m'], 2)} | {fmt(r['touchdown_vz_mps'], 2)} |"
             )
@@ -142,6 +142,6 @@ def run_benchmark(
         if START in text and END in text:
             pre, rest = text.split(START, 1)
             _, post = rest.split(END, 1)
-            note = f"\n_{episodes} seeded episodes per stage and controller; Â± is the 95% interval. Fuel, error and touchdown speed are averaged over successful landings._\n\n"
+            note = f"\n_{episodes} seeded episodes per stage and controller; ± is the 95% interval. Fuel, error and touchdown speed are averaged over successful landings._\n\n"
             readme.write_text(pre + START + note + table + "\n" + END + post, encoding="utf-8")
     return results

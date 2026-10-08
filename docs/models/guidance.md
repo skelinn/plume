@@ -42,7 +42,7 @@ Remaining failures:
 
 Other findings:
 - **Sensitivity:** wind speed ρ = 0.78, temperature −0.32, dry mass −0.30, throttle lag −0.26, dry CG 0.21.
-- **Cargo load:** the peak is 5.97 g (median) and 6.28 g (p95) against the 6 g limit, so the g-limited throttle needs margin.
+- **Cargo load:** the peak is 5.97 g (median) and 6.28 g (p95) against the 6 g limit. It occurs in the unpowered descent, at about 31 kPa of drag after the entry burn, not under thrust. Peak drag deceleration scales roughly with the square of `entry_speed`, so the trade is cargo load against entry-burn propellant (5th-percentile margin 85 kg).
 - **Propellant left:** 85 kg at p5, 133 kg median.
 
 ## Monte Carlo results: `demo_hop`, fast fidelity, 200 runs

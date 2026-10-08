@@ -201,7 +201,7 @@ _Report: [docs/mc/real_hop_high.html](docs/mc/real_hop_high.html). The dispersio
 What the analysis still shows (details in [docs/models/guidance.md](docs/models/guidance.md)):
 
 - **Wind speed** is the dominant driver of miss distance (Spearman ρ = 0.78). Temperature (−0.32), dry mass (−0.30) and throttle lag (−0.26) follow.
-- **Cargo g-limit:** the median run peaks at 5.97 g, and 5 % exceed 6.28 g. The g-limited throttle needs margin for actuator lag.
+- **Cargo g-limit:** the median run peaks at 5.97 g, and 5 % exceed 6.28 g. The peak happens during the *unpowered* descent, at about 31 kPa of drag after the entry burn, so no throttle logic can limit it. Lowering `entry_speed` reduces peak deceleration roughly as speed squared (about 1400 → 1300 m/s for −15 %), but costs propellant from a 5th-percentile margin of only 85 kg. That is a design trade to decide on, not a tuning fix.
 - **Propellant:** the worst 5 % land with under 85 kg.
 - **Fast fidelity is not a dependability tool for this vehicle.** Strip theory gives a sign-flipping side force when the engine-first body tilts. With the same guidance, the fast campaign scores 12.5 % success over 200 runs, 81.5 % recovery and a 257 m CEP50 ([report](docs/mc/demo_hop_fast.html)). Quote high-fidelity campaigns.
 
@@ -211,11 +211,11 @@ What the analysis still shows (details in [docs/models/guidance.md](docs/models/
 _200 seeded episodes per stage and controller; ± is the 95% interval. Fuel, error and touchdown speed are averaged over successful landings._
 
 | Stage | Controller | Success rate | Fuel used (kg) | Landing error (m) | Touchdown speed (m/s) |
-|---|---|---|---:|---:|---:|
-| hop_drop | PID / guidance | **100%** ± 0 | 47.4 | 2.36 | 0.79 |
-| low_descent | PID / guidance | **94%** ± 3 | 98.5 | 3.84 | 0.75 |
-| mid_descent | PID / guidance | **86%** ± 5 | 163.4 | 2.97 | 0.75 |
-| full_descent | PID / guidance | **42%** ± 7 | 227.9 | 3.71 | 0.77 |
+|---|---|---:|---:|---:|---:|
+| hop_drop | PID / guidance | **100%** ± 0 | 47.4 | 2.35 | 0.79 |
+| low_descent | PID / guidance | **96%** ± 3 | 98.3 | 3.73 | 0.75 |
+| mid_descent | PID / guidance | **90%** ± 4 | 163.6 | 2.98 | 0.75 |
+| full_descent | PID / guidance | **50%** ± 7 | 229.0 | 3.32 | 0.76 |
 <!-- RESULTS:END -->
 
 The stages run from a 30–80 m drop to a 2.5–4 km descent at 110–170 m/s in 2–10 m/s wind with gusts. A landing counts if touchdown is under 2 m/s vertical and 1 m/s horizontal, the vehicle comes to rest upright, and it is inside the 10 m pad. PPO rows appear once the idle-aware trainer has finished its 50M-step curriculum; `plume bench` regenerates the table.
