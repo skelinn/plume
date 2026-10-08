@@ -132,3 +132,29 @@ def test_summary_sensitivity_and_report(tmp_path):
     assert meta["runs"] == 60 and len(meta["center"]) == 3
     html = write_report(s, recs, tmp_path / "r.html").read_text()
     assert "Monte Carlo: fake" in html and "<svg" in html
+
+
+def test_design_overrides_change_the_nominal_and_keep_draws_paired():
+    from plume.analysis.montecarlo import _nominal
+
+    base = DispersionSpec(
+        name="b",
+        mission="real_hop",
+        params={"vehicle.engine.thrust_vac": ParamDispersion(sigma=0.01, relative=True)},
+    )
+    var = base.model_copy(
+        update={
+            "overrides": {
+                "vehicle.engine.gimbal_max_deg": 9.0,
+                "vehicle.tanks.0.capacity": {"scale": 1.05},
+                "mission.guidance.entry_speed": 1300.0,
+            }
+        }
+    )
+    s0, v0 = _nominal(base)
+    s1, v1 = _nominal(var)
+    assert v1.engine.gimbal_max_deg == 9.0 and s1.guidance.entry_speed == 1300.0
+    assert v1.tanks[0].capacity == pytest.approx(1.05 * v0.tanks[0].capacity)
+    a = sample_run(base, 3, s0.model_dump(), v0.model_dump())
+    b = sample_run(var, 3, s1.model_dump(), v1.model_dump())
+    assert a == b  # same random draws -> paired comparison

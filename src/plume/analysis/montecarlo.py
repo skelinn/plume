@@ -61,6 +61,11 @@ class DispersionSpec(BaseModel):
     seed: int = 1
     fidelity: Literal["fast", "high"] = "fast"
     params: dict[str, ParamDispersion] = Field(default_factory=dict)
+    overrides: dict[str, object] = Field(
+        default_factory=dict,
+        description="design changes applied to the nominal vehicle/mission before dispersion "
+        "(the flight software knows them): path -> value, or {scale: k} to multiply",
+    )
 
 
 def load_dispersion(name_or_path: str) -> DispersionSpec:
@@ -158,8 +163,25 @@ def _lower_priority() -> None:
 def _nominal(ds: DispersionSpec):
     from plume.config import load_mission, load_vehicle
 
+    from plume.config import MissionSpec, VehicleSpec
+
     spec = load_mission(ds.mission)
     vehicle = load_vehicle(spec.vehicle)
+    if ds.overrides:
+        m, v = spec.model_dump(), vehicle.model_dump()
+        values = {}
+        for path, val in ds.overrides.items():
+            if isinstance(val, dict) and "scale" in val:
+                root, *rest = path.split(".")
+                src, keys = (
+                    (v, rest)
+                    if root == "vehicle"
+                    else (m, rest if root == "mission" else [root, *rest])
+                )
+                val = _get(src, keys) * float(val["scale"])
+            values[path] = val
+        m, v = apply_sample(m, v, values)
+        spec, vehicle = MissionSpec(**m), VehicleSpec(**v)
     if spec.cargo_mass is not None:
         vehicle = vehicle.with_cargo(spec.cargo_mass)
     return spec, vehicle
