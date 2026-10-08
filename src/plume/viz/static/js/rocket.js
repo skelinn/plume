@@ -106,6 +106,48 @@ export class Rocket {
       }
     }
 
+    // --- grid fins (lattice panels hinged at the hull; fold up when stowed) ------------------
+    this.gridFins = [];
+    const GF = V.grid_fins;
+    if (GF && GF.count > 0) {
+      const span = GF.span, w = GF.chord, t = Math.max(0.3 * w, 0.03), bar = Math.max(0.03 * w, 0.01);
+      const finMat = new THREE.MeshStandardMaterial({ color: 0xb4bcc8, roughness: 0.35, metalness: 0.7 });
+      this.materials.push(finMat);
+      const box = (sx, sy, sz, x, y, z, ry = 0) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), finMat);
+        m.position.set(x, y, z);
+        m.rotation.y = ry;
+        return m;
+      };
+      for (let k = 0; k < GF.count; k++) {
+        const phi = (2 * Math.PI * k) / GF.count;
+        const hinge = new THREE.Group();                      // local +x radial, +y axial, z tangential
+        hinge.position.set(r * Math.cos(phi), GF.z, -r * Math.sin(phi));
+        hinge.rotation.y = phi;
+        const fold = new THREE.Group();                       // rotates about z to stow along the hull
+        const panel = new THREE.Group();                      // rotates about x (radial) = deflection
+        // outer frame
+        panel.add(box(span, t, bar, span / 2, 0, -w / 2), box(span, t, bar, span / 2, 0, w / 2));
+        panel.add(box(bar, t, w, 0.02, 0, 0), box(bar, t, w, span, 0, 0));
+        // diagonal lattice
+        const nd = 5;
+        const diag = Math.hypot(span, w) / nd;
+        for (let i = 1; i < nd * 2; i++) {
+          const f = i / (nd * 2);
+          for (const sgn of [1, -1]) {
+            const cx = f * span, len = Math.min(diag * 1.6, Math.hypot(span, w) * 0.5);
+            const m = box(len * 0.6, t * 0.9, bar * 0.6, cx, 0, 0, sgn * Math.atan2(w, span));
+            m.scale.x = Math.min(1, (Math.min(cx, span - cx) * 2.2) / (len * 0.6) + 0.15);
+            panel.add(m);
+          }
+        }
+        fold.add(panel);
+        hinge.add(fold);
+        root.add(hinge);
+        this.gridFins.push({ fold, panel });
+      }
+    }
+
     // --- engine bell (gimbals about the pivot) ---------------------------------------------
     const re = V.engine?.nozzle_radius ?? 0.3 * r;
     const bellLen = Math.max(2.1 * re, 0.02);
@@ -167,6 +209,15 @@ export class Rocket {
     this.plume.update(th, s.alt);
     const e = Math.min(th, 1);
     this.bellMat.emissive.setRGB(0.55 * e, 0.14 * e, 0.02 * e);
+
+    if (this.gridFins.length) {
+      const out = s.fins_out === undefined ? 1 : s.fins_out;
+      const defl = s.fins || [];
+      this.gridFins.forEach((g, i) => {
+        g.fold.rotation.z = (1 - out) * (Math.PI / 2);        // stowed: folded up against the hull
+        g.panel.rotation.x = defl[i] || 0;
+      });
+    }
 
     const rc = s.rcs || [0, 0, 0];
     const roll = Math.abs(rc[2]) * 0.5;

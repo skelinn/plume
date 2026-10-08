@@ -159,6 +159,27 @@ class FinSpec(Spec):
     z: float = Field(0.1, description="fin centre of pressure, body z")
 
 
+class GridFinSpec(Spec):
+    """Deployable lattice fins near the top of the hull (see ``plume.physics.gridfins``)."""
+
+    count: int = Field(4, ge=2)
+    z: float = Field(description="hinge height in body z")
+    span: float = Field(0.5, gt=0, description="radial extent of each fin, m")
+    chord: float = Field(0.45, gt=0, description="axial depth of the lattice, m")
+    radius: float | None = Field(
+        None, description="fin centre radius; default hull radius + span/2"
+    )
+    area: float | None = Field(
+        None, description="effective lifting area per fin; default span*chord"
+    )
+    cn_alpha: float = Field(3.0, ge=0, description="normal-force slope per radian, fin area")
+    cd0: float = Field(1.2, ge=0, description="lattice drag coefficient (deployed), fin area")
+    cd_delta: float = Field(2.0, ge=0, description="extra drag per rad^2 of deflection")
+    max_deflection_deg: float = Field(20.0, gt=0)
+    rate_deg_s: float = Field(45.0, gt=0)
+    deploy: Literal["always", "on_command"] = "always"
+
+
 class AeroSpec(Spec):
     enabled: bool = True
     fins: FinSpec | None = None
@@ -215,6 +236,7 @@ class VehicleSpec(Spec):
     rcs: RCSSpec = Field(default_factory=lambda: RCSSpec(enabled=False))
     aero: AeroSpec = Field(default_factory=AeroSpec)
     recovery: RecoverySpec = Field(default_factory=RecoverySpec)
+    grid_fins: GridFinSpec | None = None
 
     @model_validator(mode="after")
     def _check(self):

@@ -195,6 +195,10 @@ class HopAutopilot:
     def _set_phase(self, phase: str, label: str, kind: str = "phase") -> None:
         self.phase = phase
         self.events.append((self.sim.t, kind, label))
+        fins = self.sim.grid_fins
+        if phase == "coast" and fins is not None and not fins.deployed:
+            fins.deploy(True)  # stowed for ascent, deployed after MECO
+            self.events.append((self.sim.t, "phase", "Grid fins deployed"))
 
     def _g_limited_throttle(self, st) -> float:
         """Throttle that keeps the cargo's sensed acceleration under the limit, counting
@@ -321,6 +325,13 @@ class HopAutopilot:
         # the landing profile ignores drag: keep the engine off until the vehicle is in
         # its subsonic, near-terminal descent
         self.landing.allow_ignition = st.speed < 350.0 and st.agl < 8000.0
+        if self.landing.phase == "coast" and t - self._last_pred_t >= 0.5:
+            # unpowered descent: steer on the predicted impact point (drag + forecast wind)
+            self._last_pred_t = t
+            imp = self.predictor.predict(st.com, st.vel_com, sim.prop_mass, entry_burn=False, t0=t)
+            if imp is not None:
+                self.predicted_impact = imp
+                self.landing.predicted_miss = imp - self.mw.pad_b
         throttle, gimbal, rcs = self.landing.act(st)
         phase = {"coast": "descent", "burn": "landing_burn", "landed": "landed"}.get(
             self.landing.phase, "descent"
@@ -330,10 +341,17 @@ class HopAutopilot:
         return throttle, gimbal, rcs, phase
 
     def _landing_reserve(self, st) -> float:
-        """Propellant to keep for the landing burn and divert (~550 m/s at sea-level Isp)."""
-        dry = st.mass - self.sim.prop_mass
-        isp = self.sim.vehicle.engine.isp_sea_level
-        return dry * (math.exp(550.0 / (isp * G0)) - 1.0)
+        """Propellant to keep for the landing burn: 1.5x the terminal velocity at the
+        landing site (body + deployed grid-fin drag) plus 150 m/s for divert and hover."""
+        sim = self.sim
+        dry = st.mass - sim.prop_mass
+        rho = sim.atmosphere.density(self.predictor.ground_altitude)
+        cda = sim.aero.axial_coefficient(0.3, nose_first=False) * sim.aero.ref_area
+        cda += self.predictor.pm.extra_cda
+        v_term = math.sqrt(2.0 * dry * G0 / max(rho * cda, 1e-9))
+        dv = 1.5 * v_term + 150.0
+        isp = sim.vehicle.engine.isp_sea_level
+        return dry * (math.exp(dv / (isp * G0)) - 1.0)
 
     def _precise_meco_check(self, st) -> None:
         """Run the drag + entry-burn predictor and schedule MECO at the zero crossing."""

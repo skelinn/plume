@@ -316,12 +316,18 @@ def bench(
     workers: Annotated[
         int | None, typer.Option(help="parallel processes (default: cores - 2)")
     ] = None,
+    pid_only: Annotated[bool, typer.Option("--pid-only", help="skip the PPO agent")] = False,
 ):
     """PID vs PPO on every curriculum stage -> results table (and README)."""
     from plume.rl.benchmark import run_benchmark
 
     run_benchmark(
-        episodes=episodes, run_dir=run_dir, update_readme=readme, console=console, workers=workers
+        episodes=episodes,
+        run_dir=run_dir,
+        update_readme=readme,
+        console=console,
+        workers=workers,
+        include_ppo=not pid_only,
     )
 
 

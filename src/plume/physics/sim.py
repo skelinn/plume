@@ -25,6 +25,7 @@ from plume.constants import G0
 from plume.physics.aero import Aero
 from plume.physics.atmosphere import Atmosphere
 from plume.physics.gravity import gravity_from_world
+from plume.physics.gridfins import GridFins
 from plume.physics.massprops import MassModel, MassProps
 from plume.physics.mjcf import GroundTile, build_mjcf, leg_angles
 from plume.physics.propulsion import RCS, Engine
@@ -98,6 +99,7 @@ class Controls:
     throttle: float = 0.0
     gimbal: np.ndarray = field(default_factory=lambda: np.zeros(2))  # normalised [-1, 1]
     rcs: np.ndarray = field(default_factory=lambda: np.zeros(3))  # normalised torque [-1, 1]
+    fins: np.ndarray | None = None  # grid-fin deflections, normalised [-1, 1]
 
 
 @dataclass
@@ -197,6 +199,9 @@ class RocketSim:
         self.rcs = RCS(vehicle.rcs, vehicle, nominal.cg_z)
         self.aero = Aero(vehicle.aero, vehicle.geometry)
         self.recovery = Recovery(vehicle.recovery)
+        self.grid_fins = (
+            GridFins(vehicle.grid_fins, vehicle.geometry) if vehicle.grid_fins else None
+        )
         self.rail: dict | None = None
         self.has_ground = self.world.ground != "none" or bool(tiles)
         self._ground_height = ground_height or (lambda p: 0.0)
@@ -259,6 +264,8 @@ class RocketSim:
         self.engine.reset()
         self.rcs.reset()
         self.recovery.reset()
+        if self.grid_fins is not None:
+            self.grid_fins.reset()
         self.rail = None
         self.wind.reset(seed)
         self.controls = Controls()
@@ -330,12 +337,18 @@ class RocketSim:
         m.body_inertia[self.wet_bid] = iw
 
     # ------------------------------------------------------------------ control
-    def set_controls(self, throttle: float = 0.0, gimbal=(0.0, 0.0), rcs=(0.0, 0.0, 0.0)) -> None:
+    def set_controls(
+        self, throttle: float = 0.0, gimbal=(0.0, 0.0), rcs=(0.0, 0.0, 0.0), fins=None
+    ) -> None:
+        """Engine throttle, gimbal and RCS commands. ``fins`` (normalised grid-fin
+        deflections) is optional: the attitude controller commands the fins itself."""
         self.controls = Controls(
-            float(throttle), np.asarray(gimbal, dtype=float), np.asarray(rcs, dtype=float)
+            float(throttle), np.asarray(gimbal, dtype=float), np.asarray(rcs, dtype=float), fins
         )
         self.engine.command(throttle, gimbal)
         self.rcs.command(rcs, self.mp.cg_z)
+        if fins is not None and self.grid_fins is not None:
+            self.grid_fins.command(fins)
         self._state_cache = None
 
     # ------------------------------------------------------------------ kinematics
@@ -405,6 +418,11 @@ class RocketSim:
             R.T @ v_air_w, omega_b, cgz, atm.density, atm.speed_of_sound
         )
         self.q_dyn, self.mach = q, mach
+        if self.grid_fins is not None:
+            self.grid_fins.update(dt)
+            f_g, tau_g = self.grid_fins.forces(R.T @ v_air_w, omega_b, cgz, atm.density)
+            f_a = f_a + f_g
+            tau_a = tau_a + tau_g
 
         g = self.gravity.accel(com + (0.5 * dt) * v_com)
         f_w = R @ (f_t + f_r + f_a) + mp.mass * g
@@ -632,6 +650,9 @@ class RocketSim:
             "q_dyn": st.q_dyn,
             "wind": st.wind,
         }
+        if self.grid_fins is not None:
+            f["fins"] = self.grid_fins.delta.copy()
+            f["fins_out"] = 1.0 if self.grid_fins.deployed else 0.0
         if phase is not None:
             f["phase"] = phase
         return f
@@ -665,6 +686,20 @@ class RocketSim:
                     "thrust_max": self.engine.max_thrust(0.0),
                 },
                 "rcs_z": v.rcs.z,
+                **(
+                    {
+                        "grid_fins": {
+                            "count": v.grid_fins.count,
+                            "z": v.grid_fins.z,
+                            "span": v.grid_fins.span,
+                            "chord": v.grid_fins.chord,
+                            "radius": self.grid_fins.radius,
+                            "max_deflection": self.grid_fins.max_defl,
+                        }
+                    }
+                    if v.grid_fins
+                    else {}
+                ),
                 "cargo_mass": self.cargo_mass,
                 "dry_mass": v.mass.dry,
                 "prop_mass_initial": float(self.tank_init.sum()),

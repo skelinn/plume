@@ -1,7 +1,7 @@
 # Default point-to-point cargo vehicle, loosely modelled on a small reusable
 # suborbital cargo rocket: ~250 kg of cargo over ~750 km, landing propulsively
 # on unprepared ground. One deep-throttling engine (think a clustered engine that
-# lands on its centre chamber), cold-gas RCS, four legs.
+# lands on its centre chamber), four grid fins, cold-gas RCS, four legs.
 name: cargo_hopper
 description: 8.3 t single-stage reusable cargo hopper, 250 kg payload, ~750 km range.
 geometry:
@@ -16,8 +16,8 @@ legs:
   footpad_radius: 0.25
   max_touchdown_speed: 5.0
 mass:
-  dry: 1200.0             # structure, engine, legs, avionics
-  dry_cg_z: 3.8
+  dry: 1240.0             # structure, engine, legs, avionics, grid fins (4 x 10 kg)
+  dry_cg_z: 4.04
   dry_inertia: null
 cargo:
   mass: 250.0
@@ -52,9 +52,19 @@ rcs:
   enabled: true
   thrust: 700.0
   isp: 72.0
-  propellant: 70.0
+  propellant: 50.0        # grid fins do most of the attitude work in the atmosphere
   z: 12.0
   pods: 4
 aero:
   enabled: true
   stations: 12
+grid_fins:
+  count: 4
+  z: 11.2                 # just below the nose cone, far above the CG -> long lever arm
+  span: 0.55
+  chord: 0.45
+  cn_alpha: 3.0
+  cd0: 1.2
+  max_deflection_deg: 20.0
+  rate_deg_s: 45.0
+  deploy: on_command      # stowed against the hull for ascent, deployed after MECO

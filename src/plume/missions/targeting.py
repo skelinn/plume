@@ -66,6 +66,10 @@ class ImpactPredictor:
         grav = self.pm.gravity
         if forecast.speed > 0:  # use the forecast mean wind profile (no gusts)
             self.pm.wind_fn = lambda r, alt: grav.local_to_frame(r, forecast.mean_at(alt))
+        gf = vehicle.grid_fins
+        if gf is not None:  # deployed for the whole descent the predictor models
+            area = gf.area if gf.area is not None else gf.span * gf.chord
+            self.pm.extra_cda = gf.count * area * gf.cd0
         self.guidance = guidance
         self.ground_altitude = ground_altitude
         self.gravity = self.pm.gravity

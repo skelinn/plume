@@ -1,0 +1,42 @@
+[
+  {
+    "wind": "light (5 m/s)",
+    "vehicle": "no grid fins",
+    "runs": 4,
+    "landed": 4,
+    "median_miss_m": 36.46658254358361,
+    "fuel_left_kg": 32.77459028632175,
+    "rcs_used_kg": 44.10017307717865,
+    "max_cargo_g": 5.554793109469111
+  },
+  {
+    "wind": "light (5 m/s)",
+    "vehicle": "grid fins",
+    "runs": 4,
+    "landed": 4,
+    "median_miss_m": 7.935012016194859,
+    "fuel_left_kg": 158.2228678395635,
+    "rcs_used_kg": 43.946884281939965,
+    "max_cargo_g": 5.5577621517576095
+  },
+  {
+    "wind": "strong (10 m/s, gusts)",
+    "vehicle": "no grid fins",
+    "runs": 4,
+    "landed": 0,
+    "median_miss_m": 102.59261154590557,
+    "fuel_left_kg": 0.0,
+    "rcs_used_kg": 43.32366996263181,
+    "max_cargo_g": 18.592599259963524
+  },
+  {
+    "wind": "strong (10 m/s, gusts)",
+    "vehicle": "grid fins",
+    "runs": 4,
+    "landed": 0,
+    "median_miss_m": 77.36528791417577,
+    "fuel_left_kg": 17.560060598132523,
+    "rcs_used_kg": 49.16651202590178,
+    "max_cargo_g": 25.97239028029552
+  }
+]

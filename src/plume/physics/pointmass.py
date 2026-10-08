@@ -80,6 +80,7 @@ class PointMassSim:
             self.engine.set_thrust_curve(np.asarray(thrust_curve, dtype=float), self.prop0)
         self.recovery = Recovery(vehicle.recovery)
         self.chute_scale = 1.0  # calibration multiplier on parachute Cd*A
+        self.extra_cda = 0.0  # additional drag area, m^2 (e.g. deployed grid fins)
         cargo = vehicle.cargo.mass if cargo_mass is None else cargo_mass
         self.m_dry = vehicle.mass.dry + cargo + vehicle.rcs.gas
 
@@ -116,6 +117,7 @@ class PointMassSim:
             ca = self.aero.axial_coefficient(mach, not tail_first)
             drag = 0.5 * atm.density * speed * speed * ca * self.aero.ref_area
             a_ng -= drag / m * (va / speed)
+        cda = cda + self.extra_cda
         if cda > 0 and atm.density > 0 and speed > 1e-9:
             a_ng -= 0.5 * atm.density * cda * speed / m * va
         return v, a_ng + self.gravity.accel(r), -mdot, thrust, a_ng, alt

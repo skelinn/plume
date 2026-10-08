@@ -54,6 +54,7 @@ class LandingAutopilot:
         self.use_observer = observer
         self.max_decel = max_decel
         self.allow_ignition = True  # a mission planner may inhibit ignition (e.g. during re-entry)
+        self.steer_max_mach = 1.0  # aero steering only when subsonic
         self.att = AttitudeController(sim)
         self.reset()
 
@@ -63,6 +64,7 @@ class LandingAutopilot:
         self.a_v: float | None = None
         self.disturbance = np.zeros(3)  # estimated unmodelled force (wind), world frame
         self.last_axis = np.array([0.0, 0.0, 1.0])  # last commanded thrust axis
+        self.predicted_miss: np.ndarray | None = None  # optional, set by a mission planner
         self._prev: tuple[np.ndarray, np.ndarray] | None = None  # (velocity, predicted accel)
 
     # ------------------------------------------------------------------ helpers
@@ -110,6 +112,12 @@ class LandingAutopilot:
         v_h = st.vel_com - (st.vel_com @ up) * up
         t_go = max(h / max(descent, 1.0) * 1.6, self.min_tgo)
         a_h = -6.0 * (rel_h + v_h * t_go) / (t_go * t_go) + 2.0 * v_h / t_go
+        if self.phase == "coast" and self.predicted_miss is not None:
+            # a mission planner supplies the drag- and wind-aware predicted miss (the true
+            # zero-effort miss of an unpowered fall); null it over the remaining fall time
+            t_fall = max(h / max(descent, 1.0), self.min_tgo)
+            miss = self.predicted_miss - (self.predicted_miss @ up) * up
+            a_h = -3.0 * miss / (t_fall * t_fall)
 
         if self.phase == "coast":
             # ignite a little early to absorb throttle lag and the attitude transient
@@ -124,9 +132,14 @@ class LandingAutopilot:
                 base = -v_air / speed if speed > 5.0 else up
                 if float(base @ up) < 0.2:  # never point the nose at the ground
                     base = up
-                axis, _ = self.allocate(
-                    st, st.mass * a_h - self.disturbance, base, math.radians(12.0), 0.0, 0.0
-                )
+                if st.mach > self.steer_max_mach:
+                    # supersonic: the tilt -> side-force relation is weak and not even
+                    # monotonic; hold the stable engine-first attitude instead of steering
+                    axis = base
+                else:
+                    axis, _ = self.allocate(
+                        st, st.mass * a_h - self.disturbance, base, math.radians(12.0), 0.0, 0.0
+                    )
                 self.last_axis = axis
                 _, rcs = self.att(st, axis, 0.0)
                 return 0.0, np.zeros(2), rcs
@@ -208,18 +221,35 @@ class LandingAutopilot:
         f_b, tau_b, _, _ = self.sim.aero.forces(
             v_b, np.zeros(3), st.cg_z, atm.density, atm.speed_of_sound
         )
+        # grid fins (if deployed) hold part of the trim torque at no propellant cost
+        fins = self.sim.grid_fins
+        fin_cap = np.zeros(2)
+        if fins is not None and fins.deployed:
+            # passive fin forces (undeflected) are part of the aerodynamics...
+            f_p, tau_p = fins.forces(v_b, np.zeros(3), st.cg_z, atm.density, np.zeros(fins.n))
+            f_b = f_b + f_p
+            tau_b = tau_b + tau_p
+            fin_cap = 0.7 * fins.capability(v_b, st.cg_z, atm.density)[:2]
+        tau_left = np.sign(tau_b[:2]) * np.maximum(np.abs(tau_b[:2]) - fin_cap, 0.0)
+        if fins is not None and fins.deployed:
+            # ...and trimming with them pushes the top of the vehicle sideways:
+            # fin torque (-lz Fy, lz Fx) = -(tau_b - tau_left)
+            lz = fins.spec.z - st.cg_z
+            tau_f = -(tau_b[:2] - tau_left)
+            if abs(lz) > 1e-6:
+                f_b = f_b + np.array([tau_f[1] / lz, -tau_f[0] / lz, 0.0])
         if thrust <= 0 and info is not None:
-            # engine off: the RCS must hold the attitude against the aero torque. Report the
-            # fraction of RCS authority needed, scaled so that 25% maps to the 0.6 penalty
-            # threshold (holding a large trim would drain the gas)
-            cap = self.sim.rcs.torque_cap[:2]
-            need = np.abs(tau_b[:2]) / np.maximum(cap, 1e-9)
-            info["trim"] = float(need.max()) * 0.6 / 0.25 if self.sim.rcs.enabled else math.inf
+            # engine off: fins + RCS must hold the attitude against the aero torque. RCS
+            # gas is finite, so only 25% of its authority counts for a sustained trim;
+            # 0.6 is the penalty threshold
+            cap = 0.25 * self.sim.rcs.torque_cap[:2] if self.sim.rcs.enabled else np.zeros(2)
+            need = np.abs(tau_left) / np.maximum(cap, 1e-9)
+            info["trim"] = 0.0 if not tau_left.any() else float(need.max()) * 0.6
         if thrust > 0:
             rz = self.sim.vehicle.engine.gimbal_z - st.cg_z
             if abs(rz) > 1e-6:
-                # gimbal torque (0,0,rz) x F = (-rz Fy, rz Fx, 0) must cancel tau_aero
-                side_f = np.array([-tau_b[1] / rz, tau_b[0] / rz, 0.0])
+                # gimbal torque (0,0,rz) x F = (-rz Fy, rz Fx, 0) must cancel what the fins can't
+                side_f = np.array([-tau_left[1] / rz, tau_left[0] / rz, 0.0])
                 cap = thrust * math.sin(self.sim.engine.gimbal_max)
                 n = float(np.linalg.norm(side_f))
                 if info is not None:

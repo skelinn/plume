@@ -83,14 +83,14 @@ def markdown_table(results: dict, stages: list[str]) -> str:
     ]
 
     def fmt(x, d=1):
-        return "–" if x != x else f"{x:.{d}f}"
+        return "â€“" if x != x else f"{x:.{d}f}"
 
     for st in stages:
         for ctrl, label in (("pid", "PID / guidance"), ("ppo", "PPO")):
             r = results.get(ctrl, {}).get(st)
             if not r:
                 continue
-            sr = f"**{100 * r['success_rate']:.0f}%** ± {100 * r['success_ci95']:.0f}"
+            sr = f"**{100 * r['success_rate']:.0f}%** Â± {100 * r['success_ci95']:.0f}"
             lines.append(
                 f"| {st} | {label} | {sr} | {fmt(r['fuel_kg'])} | {fmt(r['landing_error_m'], 2)} | {fmt(r['touchdown_vz_mps'], 2)} |"
             )
@@ -105,12 +105,13 @@ def run_benchmark(
     out_json: Path = Path("docs/results.json"),
     seed0: int = 50_000,
     workers: int | None = None,
+    include_ppo: bool = True,
 ) -> dict:
     from plume.config import load_landing_env
 
     stages = [s.name for s in load_landing_env().curriculum.stages]
     controllers = ["pid"]
-    if (Path(run_dir) / "model.zip").exists():
+    if include_ppo and (Path(run_dir) / "model.zip").exists():
         controllers.append("ppo")
     jobs = []
     chunk = 25
@@ -141,6 +142,6 @@ def run_benchmark(
         if START in text and END in text:
             pre, rest = text.split(START, 1)
             _, post = rest.split(END, 1)
-            note = f"\n_{episodes} seeded episodes per stage and controller; ± is the 95% interval. Fuel, error and touchdown speed are averaged over successful landings._\n\n"
+            note = f"\n_{episodes} seeded episodes per stage and controller; Â± is the 95% interval. Fuel, error and touchdown speed are averaged over successful landings._\n\n"
             readme.write_text(pre + START + note + table + "\n" + END + post, encoding="utf-8")
     return results

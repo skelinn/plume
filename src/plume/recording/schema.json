@@ -44,6 +44,17 @@
               }
             },
             "rcs_z": { "type": "number" },
+            "grid_fins": {
+              "type": "object",
+              "properties": {
+                "count": { "type": "integer" },
+                "z": { "type": "number" },
+                "span": { "type": "number" },
+                "chord": { "type": "number" },
+                "radius": { "type": "number" },
+                "max_deflection": { "type": "number" }
+              }
+            },
             "cargo_mass": { "type": "number" },
             "dry_mass": { "type": "number" },
             "prop_mass_initial": { "type": "number" }
@@ -116,7 +127,9 @@
         "mach": { "type": "array", "items": { "type": "number" } },
         "q_dyn": { "type": "array", "items": { "type": "number" } },
         "wind": { "type": "array", "items": { "$ref": "#/$defs/vec3" } },
-        "phase": { "type": "array", "items": { "type": "string" } }
+        "phase": { "type": "array", "items": { "type": "string" } },
+        "fins": { "type": "array", "items": { "type": "array", "items": { "type": "number" } }, "description": "grid-fin deflections, rad" },
+        "fins_out": { "type": "array", "items": { "type": "number" }, "description": "1 = grid fins deployed, 0 = stowed" }
       }
     },
     "events": {
