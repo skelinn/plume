@@ -45,6 +45,32 @@ Other findings:
 - **Cargo load:** the peak is 5.97 g (median) and 6.28 g (p95) against the 6 g limit. It occurs in the unpowered descent, at about 31 kPa of drag after the entry burn, not under thrust. Peak drag deceleration scales roughly with the square of `entry_speed`, so the trade is cargo load against entry-burn propellant (5th-percentile margin 85 kg).
 - **Propellant left:** 85 kg at p5, 133 kg median.
 
+### Ascent loss of control at max-q (vehicle design finding)
+
+All three terrain impacts in v6 are ascent losses of control near max-q. The sequence:
+
+1. The vehicle is at Mach 1.0–1.6 and about 50 kPa, with 7.5–10.7 m/s wind and moderate turbulence.
+2. A gust raises the angle of attack to 5–6°.
+3. The nose-first hull is aerodynamically unstable in the database aerodynamics, and the 7° gimbal saturates.
+4. The vehicle tumbles.
+
+Re-flying the same three draws:
+
+| change | run 15 | run 20 | run 33 |
+|---|---|---|---|
+| v6 | lost at max-q | lost at max-q | lost at max-q |
+| + load relief (fly along the air-relative velocity at high q) and a 1° AoA cap above 30 kPa (rejected; see v7) | lost | lost | lost |
+| + 40 kPa throttle bucket | lost | lost | lost |
+| + 9° gimbal range (vehicle change) | lost | ascent OK, landed off site | ascent OK, tipped over |
+
+Cutting thrust in a throttle bucket also cuts gimbal authority, so it doesn't help an unstable vehicle. Thrust-vector authority margin at max-q is a **vehicle design** issue: more gimbal range, a lower-max-q trajectory, or aerodynamic stability on ascent (fins or deployed grid fins).
+
+**v7, tried and rejected:** load relief plus reduced cross-range correction at high dynamic pressure scored **39 %** over 64 runs (versus 87.5 %). Following the air-relative velocity turns the trajectory into the wind, and the velocity heading drifted 9° off the track through max-q. With cross-range correction suppressed, MECO left tens to hundreds of kilometres of cross-track error. Load relief needs ascent re-targeting after max-q before it can be used. The code is back to v6.
+
+### Propellant slosh
+
+64 runs with the first lateral slosh mode in both tanks and damping dispersed between 0.005 and 0.03 (`configs/dispersions/real_hop_slosh.yaml`). Mission success was **identical**: the same 56 of 64 runs landed. Vehicle recovery was 95.3 % against 93.8 % rigid. For this vehicle and controller, first-mode slosh is not a dependability driver.
+
 ## Monte Carlo results: `demo_hop`, fast fidelity, 200 runs
 
 Dispersions are in `configs/dispersions/demo_hop.yaml`:

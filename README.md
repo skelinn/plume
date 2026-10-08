@@ -35,7 +35,7 @@ It flies cargo 750 km between real launch sites over real terrain and lands it. 
 uv sync --all-extras                       # Python 3.11+, CUDA torch on Windows/Linux
 uv run plume hop demo_hop                  # 750 km cargo hop, fast fidelity (~1 min)
 uv run plume hop real_hop --fidelity high  # Spaceport America -> Burns Flat, verification-grade models (~5 min)
-uv run plume mc demo_hop                   # Monte Carlo: success probability, landing dispersion, sensitivity
+uv run plume mc real_hop --runs 64         # Monte Carlo at high fidelity: success probability, dispersion, sensitivity
 uv run plume vv-report                     # verification report: tests, NASA check cases, model status
 uv run plume viz                           # viewer at http://localhost:8765
 ```
@@ -61,7 +61,7 @@ No simulator is "the most realistic possible", and realism alone doesn't make re
 
 | | What it answers | Status |
 |---|---|---|
-| **Verification** | Is the math implemented correctly? | 136 automated checks: analytic orbits, energy integrals, convergence, published tables, NASA reference trajectories. `plume vv-report` writes [docs/vv/report.html](docs/vv/report.html). |
+| **Verification** | Is the math implemented correctly? | 139 automated checks: analytic orbits, energy integrals, convergence, published tables, NASA reference trajectories. `plume vv-report` writes [docs/vv/report.html](docs/vv/report.html). |
 | **Validation** | Do the models match reality? | **Pending real data.** The pipeline is ready: flight-log import, calibration, and aero database importers for RASAero, OpenRocket, DATCOM and CSV. No model is marked validated until real flight or test data has been compared. |
 | **Quantified uncertainty** | How likely is the mission to succeed? | `plume mc` samples engine, mass, aero, actuator and weather uncertainty. It reports success probability with a confidence interval, the landing dispersion, failure modes and the parameters that drive misses. |
 
@@ -82,6 +82,7 @@ Key verification results:
 | Wind | shear, gusts, first-order turbulence | forecast/sounding profiles, MIL-F-8785C Dryden or von Kármán turbulence |
 | Aerodynamics | strip theory with Mach tables | 6-component database (Mach, α 0–180°, Reynolds) with grid-fin transonic choking, retro-propulsion and heating; legs stowed in flight |
 | Actuators | first-order | second-order gimbal with delay and backlash, ignition delay, RCS pulse-width modulation with minimum impulse bit |
+| Propellant | rigid, moves the CG as it drains | same, plus optional first-mode slosh per tank (spring–mass, NASA SP-106) |
 | Flight software sees | true state | navigation estimate: IMU, GNSS, baro and radar altimeter fused by a 15-state EKF |
 | Speed | RL and fast iteration | about 3–5× slower |
 
@@ -202,6 +203,7 @@ What the analysis still shows (details in [docs/models/guidance.md](docs/models/
 
 - **Wind speed** is the dominant driver of miss distance (Spearman ρ = 0.78). Temperature (−0.32), dry mass (−0.30) and throttle lag (−0.26) follow.
 - **Cargo g-limit:** the median run peaks at 5.97 g, and 5 % exceed 6.28 g. The peak happens during the *unpowered* descent, at about 31 kPa of drag after the entry burn, so no throttle logic can limit it. Lowering `entry_speed` reduces peak deceleration roughly as speed squared (about 1400 → 1300 m/s for −15 %), but costs propellant from a 5th-percentile margin of only 85 kg. That is a design trade to decide on, not a tuning fix.
+- **Ascent loss of control at max-q** caused all 3 catastrophic failures: a gust at about 50 kPa saturates the 7° gimbal on the aerodynamically unstable hull. A 9° gimbal saves 2 of the 3; load relief and a throttle bucket did not help. This is a vehicle design item (thrust-vector authority, max-q, ascent stability).
 - **Propellant:** the worst 5 % land with under 85 kg.
 - **Fast fidelity is not a dependability tool for this vehicle.** Strip theory gives a sign-flipping side force when the engine-first body tilts. With the same guidance, the fast campaign scores 12.5 % success over 200 runs, 81.5 % recovery and a 257 m CEP50 ([report](docs/mc/demo_hop_fast.html)). Quote high-fidelity campaigns.
 
@@ -233,6 +235,7 @@ Each model has a page in [docs/models/](docs/models/README.md) covering its equa
 | Aerodynamic database and generator | [aero.md](docs/models/aero.md) |
 | Propulsion and actuators | [propulsion.md](docs/models/propulsion.md) |
 | Mass properties | [mass.md](docs/models/mass.md) |
+| Propellant slosh | [slosh.md](docs/models/slosh.md) |
 | Sensors and navigation | [navigation.md](docs/models/navigation.md) |
 | Real terrain | [terrain.md](docs/models/terrain.md) |
 | Cargo-hop guidance, plus Monte Carlo findings | [guidance.md](docs/models/guidance.md) |
@@ -298,7 +301,7 @@ src/plume/
   physics/     sim (6-DOF), pointmass (3-DOF), earth (WGS-84, J2-J6, rotating frame), gravity,
                atmosphere (US76, NRLMSISE-00, soundings), wind, turbulence (MIL-F-8785C),
                aero (strip), aerodb + aero_gen (database, generator, importers), gridfins,
-               propulsion (engine, gimbal actuator, RCS PWM), sensors, recovery, mjcf
+               propulsion (engine, gimbal actuator, RCS PWM), slosh, sensors, recovery, mjcf
   control/     attitude, autopilot (landing), navigation (INS/GNSS EKF)
   missions/    hop (planner, autopilot), targeting (impact prediction), scoring
   analysis/    nasa_checkcases, montecarlo, vv (report)
@@ -315,7 +318,7 @@ src/plume/
   - Semi-empirical aero is checked only against supersonic (Mach 2.86) body data so far.
   - Subsonic, transonic, finned-body, grid-fin and retro-propulsion data have not been compared yet.
   - There is no aeroelasticity or structural-load model.
-- **Vehicle effects not modelled:** propellant slosh, structural bending modes, landing-gear crush stroke and soil models. The IMU is assumed at the CG.
+- **Vehicle effects not modelled:** structural bending modes, landing-gear crush stroke and soil models. Slosh covers the first mode only. The IMU is assumed at the CG.
 - **Navigation:** the onboard terrain map is assumed perfect, and there is no RTK or landing-beacon option.
 - **Geoid:** DEM heights are orthometric, the simulator uses ellipsoidal heights, and the geoid offset (tens of metres) is not applied.
 - **Flight software:** the cargo-hop guidance reaches 87.5 % success at high fidelity under the stated dispersions. It is not flight-qualified: it exceeds the cargo g-limit slightly, and the dispersion bounds are representative rather than measured.
