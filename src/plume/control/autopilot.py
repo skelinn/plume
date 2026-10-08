@@ -56,6 +56,7 @@ class LandingAutopilot:
         self.allow_ignition = True  # a mission planner may inhibit ignition (e.g. during re-entry)
         self.steer_max_mach = 1.0  # aero steering only when subsonic
         self.supersonic_tilt_deg = 4.0  # tilt cap when steer_max_mach > 1 allows it
+        self.subsonic_tilt_deg = 12.0  # tilt cap for subsonic aero steering
         # unpowered-descent steering law: "zem" (3 miss / t^2) or the experimental
         # "drag_lag" law (first-order lateral response); neither has enough authority
         # to null large misses (docs/models/guidance.md)
@@ -217,15 +218,26 @@ class LandingAutopilot:
                 base = -v_air / speed if speed > 5.0 else up
                 if float(base @ up) < 0.2:  # never point the nose at the ground
                     base = up
-                cap = math.radians(12.0 if st.mach <= 1.0 else self.supersonic_tilt_deg)
+                cap = math.radians(
+                    self.subsonic_tilt_deg if st.mach <= 1.0 else self.supersonic_tilt_deg
+                )
                 if st.mach > self.steer_max_mach:
                     # supersonic: the tilt -> side-force relation is weak and not even
                     # monotonic; hold the stable engine-first attitude instead of steering
                     axis = base
                 else:
-                    axis, _ = self.allocate(
-                        st, st.mass * a_h - self.disturbance, base, cap, 0.0, 0.0
-                    )
+                    # ask for a *change* from the natural (zero-tilt) aero force: on an
+                    # inclined descent the drag itself has a large horizontal component
+                    # that no tilt can cancel, and chasing it saturated the tilt in an
+                    # arbitrary direction (found in high-fidelity supersonic descent)
+                    atm = sim.atmosphere.at(st.altitude)
+                    ref = np.cross(base, up)
+                    if float(np.linalg.norm(ref)) < 1e-6:
+                        ref = np.cross(base, np.array([1.0, 0.0, 0.0]))
+                    ortho = ref / np.linalg.norm(ref)
+                    f0 = self.predicted_force(st, base, ortho, 0.0, atm)
+                    d_h = self.disturbance - (self.disturbance @ up) * up
+                    axis, _ = self.allocate(st, f0 + st.mass * a_h - d_h, base, cap, 0.0, 0.0)
                 self.last_axis = axis
                 _, rcs = self.att(st, axis, 0.0)
                 return 0.0, np.zeros(2), rcs

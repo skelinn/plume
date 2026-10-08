@@ -237,6 +237,14 @@ class HopAutopilot:
         self._drag_prev = None  # (t, velocity) for in-flight drag estimation
         self.landing.max_divert_m = guidance.max_divert_m
         self.landing.divert_gate = guidance.divert_gate
+        if sim.world.fidelity == "high":
+            # with the aero database the side force from tilting the engine-first body is
+            # monotonic and strong supersonically (2-5 m/s^2 at 15-20 deg, Mach 1.5):
+            # steer the descent with it. Strip theory (fast) gives a non-monotonic,
+            # sign-flipping response, so fast fidelity keeps the conservative limits.
+            self.landing.steer_max_mach = guidance.aero_steer_max_mach
+            self.landing.supersonic_tilt_deg = guidance.supersonic_tilt_deg
+            self.landing.subsonic_tilt_deg = guidance.subsonic_tilt_deg
         self._pred_hist: list[tuple[float, float]] = []  # (t, along-track error)
         self._meco_at: float | None = None
         self.predicted_impact: np.ndarray | None = None

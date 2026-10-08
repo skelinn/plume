@@ -576,6 +576,11 @@ class HopGuidanceSpec(Spec):
     closed_loop_ascent: bool = Field(
         True, description="track the planned flight-path angle vs speed in the gravity turn"
     )
+    aero_steer_max_mach: float = Field(
+        5.0, gt=0, description="high fidelity: steer the descent with body lift below this Mach"
+    )
+    supersonic_tilt_deg: float = Field(15.0, ge=0, description="high fidelity: tilt cap above Mach 1")
+    subsonic_tilt_deg: float = Field(20.0, ge=0, description="high fidelity: tilt cap below Mach 1")
     divert_gate: bool = Field(
         False,
         description="experimental: brake to a slow gate above the pad and fly the divert at "
