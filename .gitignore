@@ -18,3 +18,4 @@ node_modules/
 !data/replays/*.plume.json.gz
 .DS_Store
 .claude/
+site/

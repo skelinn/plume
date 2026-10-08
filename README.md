@@ -22,6 +22,8 @@
   <img src="docs/assets/gridfins_closeup.jpg" width="49%" alt="Lattice grid fins deployed during descent">
 </p>
 
+<p align="center"><b><a href="https://skelinn.github.io/plume/">Open the live 3-D viewer</a></b> · <a href="https://skelinn.github.io/plume/reports/">verification and Monte Carlo reports</a></p>
+
 Plume flies a rigid-body rocket in MuJoCo with its own models of:
 
 - Earth and gravity

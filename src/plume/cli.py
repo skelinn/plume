@@ -509,6 +509,17 @@ def vv_report(
         raise typer.Exit(1)
 
 
+@app.command("export-site")
+def export_site_cmd(
+    out: Annotated[Path, typer.Option(help="output folder")] = Path("site"),
+    replays: Annotated[Path, typer.Option(help="replay folder to publish")] = Path("data/replays"),
+):
+    """Export the viewer, bundled replays, terrain and reports as a static site."""
+    from plume.viz.export import export_site
+
+    export_site(out, replay_dirs=(replays,), log=console.print)
+
+
 try:  # real-terrain tools (plume terrain fetch | info | hazard)
     from plume.terrain.cli import terrain_app
 

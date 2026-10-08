@@ -17,6 +17,7 @@ import { Transport } from './transport.js';
 import { LiveSession } from './live.js';
 import { setupCapture } from './capture.js';
 import { MODES } from './cameras.js';
+import { STATIC, api } from './api.js';
 
 const params = new URLSearchParams(location.search);
 const CAPTURE = params.get('capture') === '1';
@@ -195,6 +196,10 @@ function stopLive() {
 
 async function startLive() {
   stopLive();
+  if (STATIC) {
+    showOverlay('Live streaming needs a local viewer.<br><small>Run <code>uv run plume viz</code> and stream with <code>--live</code>.</small>', { spinner: false });
+    return;
+  }
   const channel = params.get('channel') || 'default';
   const live = (S.live = { follow: true, status: 'connecting', lastRefresh: 0, channel });
   $('sel-a').value = LIVE_ID;
@@ -401,7 +406,7 @@ async function boot() {
   }
   setSpeed(1);
   try {
-    S.list = await (await fetch('/api/replays')).json();
+    S.list = await (await fetch(api.replays())).json();
   } catch (e) {
     showOverlay(`Could not reach the Plume server: ${e.message}`, { spinner: false });
     return;

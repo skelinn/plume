@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import { bisect, clamp } from './util.js';
+import { api } from './api.js';
 
 const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
 
@@ -212,7 +213,7 @@ export class Replay {
 }
 
 export async function fetchReplay(id) {
-  const url = '/api/replays/' + id.split('/').map(encodeURIComponent).join('/');
+  const url = api.replay(id);
   const r = await fetch(url);
   if (!r.ok) throw new Error(`replay ${id}: HTTP ${r.status}`);
   const text = await r.text();

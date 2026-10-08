@@ -11,6 +11,7 @@
 
 import * as THREE from 'three';
 import { GLSL_NOISE } from './shaders.js';
+import { api } from './api.js';
 
 const CHUNK = 64;
 const MAX_PADS = 6;
@@ -20,12 +21,11 @@ const fetchCache = new Map();
 export function fetchTerrain(id, maxDim = 1024) {
   const key = `${id}|${maxDim}`;
   if (!fetchCache.has(key)) {
-    const base = '/api/terrain/' + id.split('/').map(encodeURIComponent).join('/');
     const p = (async () => {
-      const mr = await fetch(`${base}?max_dim=${maxDim}`);
+      const mr = await fetch(api.terrainMeta(id, maxDim));
       if (!mr.ok) throw new Error(`terrain ${id}: HTTP ${mr.status}`);
       const meta = await mr.json();
-      const hr = await fetch(`${base}/heights?max_dim=${maxDim}`);
+      const hr = await fetch(api.terrainHeights(id, maxDim));
       if (!hr.ok) throw new Error(`terrain ${id} heights: HTTP ${hr.status}`);
       const heights = new Float32Array(await hr.arrayBuffer());
       if (heights.length !== meta.nx * meta.ny) throw new Error(`terrain ${id}: bad heights size`);
