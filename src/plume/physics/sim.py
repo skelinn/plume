@@ -23,14 +23,14 @@ import numpy as np
 from plume.config import VehicleSpec, WorldSpec
 from plume.constants import G0
 from plume.physics.aero import Aero
-from plume.physics.atmosphere import Atmosphere
+from plume.physics.atmosphere import atmosphere_from_world
 from plume.physics.gravity import gravity_from_world
 from plume.physics.gridfins import GridFins
 from plume.physics.massprops import MassModel, MassProps
 from plume.physics.mjcf import GroundTile, build_mjcf, leg_angles
 from plume.physics.propulsion import RCS, Engine
 from plume.physics.recovery import Recovery
-from plume.physics.wind import WindModel
+from plume.physics.wind import wind_from_world
 
 
 # --------------------------------------------------------------------------- helpers
@@ -226,8 +226,10 @@ class RocketSim:
         self.world = world or WorldSpec()
         self.dt = self.world.dt
         self.gravity = gravity_from_world(self.world)
-        self.atmosphere = Atmosphere(self.world.atmosphere, self.world.temperature_offset)
-        self.wind = WindModel.from_spec(self.world.wind, seed)
+        self.atmosphere = atmosphere_from_world(self.world)
+        self.wind = wind_from_world(self.world, seed)
+        self._geodetic = hasattr(self.gravity, "geodetic")
+        self._turb = hasattr(self.wind, "turbulence") and hasattr(self.wind, "mean")
         self.mass_model = MassModel(vehicle)
         self.engine = Engine(vehicle.engine, vehicle.prop_capacity)
         self.tank_init = np.array([t.initial_mass for t in vehicle.tanks], dtype=float)
@@ -506,7 +508,15 @@ class RocketSim:
         if self.rail is not None:
             self._apply_rail()
         self.t += dt
-        self.wind.step(dt)
+        if self._turb:  # MIL turbulence is a frozen field sampled along the air path
+            self.wind.step(
+                dt, altitude=alt, agl=alt - self._ground_height(com), v_ground=self._to_local(com, v_com)
+            )
+        else:
+            self.wind.step(dt)
+        if self._geodetic and self.atmosphere.name == "nrlmsise00":
+            lat, lon, _ = self.gravity.geodetic(com)
+            self.atmosphere.locate(math.degrees(lat), math.degrees(lon))
 
         # --- deplete propellant
         dm_e = mdot_e * dt
@@ -654,6 +664,16 @@ class RocketSim:
             )
 
     # ------------------------------------------------------------------ observers
+    def _to_local(self, p: np.ndarray, vec: np.ndarray) -> np.ndarray:
+        """Frame vector -> local East-North-Up at ``p`` (inverse of local_to_frame)."""
+        g = self.gravity
+        if not g.curved:
+            return np.asarray(vec)
+        if hasattr(g, "enu_at"):
+            return g.enu_at(p).T @ vec
+        M = np.column_stack([g.local_to_frame(p, e) for e in np.eye(3)])
+        return M.T @ vec
+
     def agl(self) -> float:
         """Height of the lowest footpad (or hull base) above the ground."""
         R = self.rot

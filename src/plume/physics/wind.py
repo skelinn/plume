@@ -59,7 +59,7 @@ class WindModel:
 
     @classmethod
     def from_spec(cls, spec, seed: int | None = None) -> WindModel:
-        return cls(**spec.model_dump(), seed=seed)
+        return cls(**{k: v for k, v in spec.model_dump().items() if k in _WINDMODEL_FIELDS}, seed=seed)
 
     @property
     def enabled(self) -> bool:
@@ -90,7 +90,7 @@ class WindModel:
             f *= max(fade, 0.0)
         return f
 
-    def step(self, dt: float) -> None:
+    def step(self, dt: float, **_) -> None:
         """Advance turbulence and gust processes by ``dt``."""
         self.t += dt
         if self.turbulence > 0:
@@ -156,7 +156,7 @@ class TableWind:
     def reset(self, seed=None) -> None:
         self.t = 0.0
 
-    def step(self, dt: float) -> None:
+    def step(self, dt: float, **_) -> None:
         self.t += dt
 
     def _interp(self, col, h):
@@ -171,3 +171,73 @@ class TableWind:
 
     def at(self, altitude: float) -> np.ndarray:
         return self.mean_at(altitude)
+
+
+class CompositeWind:
+    """Mean wind (``WindModel`` or ``TableWind``) plus MIL-spec continuous turbulence
+    (:class:`plume.physics.turbulence.MilTurbulence`) driven along the air path."""
+
+    def __init__(self, mean, turbulence):
+        self.mean = mean
+        self.turbulence = turbulence
+        self.speed = getattr(mean, "speed", 0.0)
+
+    @property
+    def enabled(self) -> bool:
+        return True
+
+    def reset(self, seed=None) -> None:
+        self.mean.reset(seed)
+        self.turbulence.reset(None if seed is None else seed + 7919)
+
+    def step(self, dt: float, altitude: float = 0.0, agl: float | None = None, v_ground=None) -> None:
+        self.mean.step(dt)
+        mw = self.mean.mean_at(altitude)
+        v_rel = (np.zeros(3) if v_ground is None else np.asarray(v_ground)) - mw
+        self.turbulence.advance(dt, altitude if agl is None else agl, v_rel, mw)
+
+    def mean_at(self, altitude: float) -> np.ndarray:
+        return self.mean.mean_at(altitude)
+
+    def at(self, altitude: float) -> np.ndarray:
+        return self.mean.at(altitude) + self.turbulence.value
+
+
+def wind_from_world(world, seed: int | None = None):
+    """Wind model for a world: a sounding/forecast profile (``wind.profile``) or the
+    parametric shear model, plus MIL-spec turbulence when ``wind.turbulence_severity`` is
+    set (``turbulence_model`` auto = von Karman)."""
+    spec = world.wind
+    if getattr(spec, "profile", None):
+        from plume.physics.atmosphere import read_sounding, resolve_profile
+
+        snd = read_sounding(resolve_profile(spec.profile))
+        if "east" not in snd:
+            raise ValueError(f"wind profile {spec.profile}: no wind columns")
+        ok = np.isfinite(snd["east"]) & np.isfinite(snd["north"])
+        mean = TableWind(snd["alt"][ok], snd["east"][ok], snd["north"][ok], extrapolate=False)
+    else:
+        fields = {k: v for k, v in spec.model_dump().items() if k in _WINDMODEL_FIELDS}
+        mean = WindModel(**fields, seed=seed)
+    sev = getattr(spec, "turbulence_severity", "none")
+    if sev and sev != "none":
+        from plume.physics.turbulence import MilTurbulence
+
+        model = spec.turbulence_model if spec.turbulence_model != "auto" else "von_karman"
+        return CompositeWind(mean, MilTurbulence(model, sev, None if seed is None else seed + 7919))
+    return mean
+
+
+_WINDMODEL_FIELDS = (
+    "speed",
+    "from_deg",
+    "shear_exponent",
+    "ref_height",
+    "shear_top",
+    "fade_top",
+    "turbulence",
+    "turbulence_tau",
+    "gust_rate",
+    "gust_max",
+    "gust_duration",
+)

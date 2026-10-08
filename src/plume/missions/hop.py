@@ -84,6 +84,9 @@ class MissionWorld:
         self.site_b = np.array([b.u, b.v])
         self.pad_a = gravity.surface_point(a.u, a.v, self.terrain_height(a.u, a.v))
         self.pad_b = gravity.surface_point(b.u, b.v, self.terrain_height(b.u, b.v))
+        # geocentric radius of the landing pad: the impact sphere for ballistic prediction
+        # (= R + h on a spherical Earth; varies with latitude on the WGS-84 ellipsoid)
+        self.r_target = float(np.linalg.norm(self.pad_b - gravity.center))
         d = self.site_b - self.site_a
         self.range = float(np.linalg.norm(d))
         self.track = d / self.range
@@ -137,6 +140,29 @@ class MissionWorld:
             )
         return out
 
+    def map_grid(self, n: int = 33) -> dict:
+        """Residual of the true (WGS-84) map->world mapping against the viewer's reference
+        sphere (radius ``earth_radius``, centre straight below the origin), sampled on a
+        regular grid over the base terrain. The viewer adds the bilinearly interpolated
+        residuals to its spherical mapping, which reproduces the ellipsoid to centimetres."""
+        R = self.gravity.earth_radius
+        ref = SphericalGravity(radius=R)
+        b = self.base
+        us = np.linspace(b.x_min, b.x_max, n)
+        vs = np.linspace(b.y_min, b.y_max, n)
+        dp, dn = [], []
+        for v in vs:  # row-major: v outer, u inner
+            for u in us:
+                dp.extend(np.round(self.gravity.surface_point(u, v, 0.0) - ref.surface_point(u, v), 3))
+                dn.extend(np.round(self.gravity.surface_normal(u, v) - ref.surface_normal(u, v), 7))
+        return {
+            "u0": float(us[0]), "v0": float(vs[0]),
+            "du": float(us[1] - us[0]), "dv": float(vs[1] - vs[0]),
+            "nu": n, "nv": n,
+            "dp": [float(x) for x in dp],  # ENU metres, 3 per node
+            "dn": [float(x) for x in dn],  # unit-normal residual, 3 per node
+        }
+
     def scene_meta(self) -> dict:
         t = self.spec.terrain
         geo = {}
@@ -148,6 +174,7 @@ class MissionWorld:
                     "lon_deg": math.degrees(self.gravity.lon0),
                     "height": self.gravity.h0,
                 },
+                "map_grid": self.map_grid(),
             }
         return {
             "frame": "spherical",
@@ -261,7 +288,7 @@ class HopAutopilot:
                 st.com,
                 st.vel_com,
                 sim.gravity,
-                sim.gravity.earth_radius + self.predictor.ground_altitude,
+                self.mw.r_target,
             )
             if imp is not None:
                 along, cross = self._along_error(imp)
@@ -403,7 +430,7 @@ def plan_ascent(
     up0 = gravity.up(mw.pad_a)
     horiz = mw.local_frame(*mw.site_a) @ np.array([*mw.track, 0.0])
     dr = horiz / np.linalg.norm(horiz)
-    r_target = gravity.earth_radius + mw.terrain_height(*mw.site_b)
+    r_target = mw.r_target
     m0 = pm.m_dry + pm.prop0
     t_max = pm.engine.max_thrust(0.0)
 

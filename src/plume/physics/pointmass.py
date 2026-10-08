@@ -17,7 +17,7 @@ import numpy as np
 from plume.config import VehicleSpec, WorldSpec
 from plume.constants import G0
 from plume.physics.aero import Aero
-from plume.physics.atmosphere import Atmosphere
+from plume.physics.atmosphere import atmosphere_from_world
 from plume.physics.gravity import gravity_from_world
 from plume.physics.propulsion import Engine
 from plume.physics.recovery import Recovery
@@ -70,7 +70,7 @@ class PointMassSim:
         self.world = world or WorldSpec()
         self.gravity = gravity_from_world(self.world)
         self._rotating = bool(getattr(self.gravity, "rotating", False))
-        self.atmosphere = Atmosphere(self.world.atmosphere, self.world.temperature_offset)
+        self.atmosphere = atmosphere_from_world(self.world)
         aero_spec = vehicle.aero.model_copy()
         if cd_scale is not None:
             aero_spec.cd_scale = cd_scale

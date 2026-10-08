@@ -272,6 +272,24 @@ class WindSpec(Spec):
     gust_rate: float = Field(0.0, ge=0, description="discrete gusts per second")
     gust_max: float = Field(0.0, ge=0)
     gust_duration: tuple[float, float] = (1.0, 4.0)
+    profile: str | None = Field(
+        None, description="sounding/forecast CSV (path or name in configs/winds/) for the mean wind"
+    )
+    turbulence_model: Literal["auto", "dryden", "von_karman"] = "auto"
+    turbulence_severity: Literal["none", "light", "moderate", "severe"] = Field(
+        "none", description="MIL-F-8785C continuous turbulence (replaces `turbulence` when set)"
+    )
+
+
+class AtmosphereModelSpec(Spec):
+    """Which atmosphere model to use (``WorldSpec.atmosphere`` still switches air off)."""
+
+    model: Literal["us76", "nrlmsise00", "sounding"] = "us76"
+    epoch: str = Field("2025-06-21T18:00:00Z", description="UTC date/time for NRLMSISE-00")
+    f107: float = Field(150.0, ge=0, description="previous-day F10.7 solar flux, sfu")
+    f107a: float = Field(150.0, ge=0, description="81-day mean F10.7, sfu")
+    ap: float = Field(4.0, ge=0, description="daily geomagnetic Ap index")
+    sounding: str | None = Field(None, description="CSV with altitude + temperature (+ pressure)")
 
 
 class EarthSpec(Spec):
@@ -298,6 +316,7 @@ class WorldSpec(Spec):
     g: float = Field(9.80665, ge=0, description="flat gravity only: acceleration, m/s^2")
     atmosphere: bool = True
     temperature_offset: float = 0.0
+    atmosphere_model: AtmosphereModelSpec = Field(default_factory=AtmosphereModelSpec)
     wind: WindSpec = Field(default_factory=WindSpec)
     ground: Literal["plane", "none"] = "plane"
     ground_friction: float = Field(0.8, ge=0)

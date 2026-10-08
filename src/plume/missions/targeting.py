@@ -84,9 +84,9 @@ class ImpactPredictor:
         ground_altitude: float,
         cargo_mass: float,
     ):
-        from plume.physics.wind import WindModel
+        from plume.physics.wind import wind_from_world
 
-        forecast = WindModel.from_spec(world.wind)
+        forecast = wind_from_world(world)
         calm = world.model_copy(update={"wind": world.wind.model_copy(update={"speed": 0.0})})
         self.pm = PointMassSim(vehicle, calm, cargo_mass=cargo_mass)
         grav = self.pm.gravity

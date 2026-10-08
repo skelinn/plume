@@ -26,7 +26,9 @@ world:
   atmosphere: true
   ground: none
   dt: 0.01
-  wind: {speed: 5.0, from_deg: 250, turbulence: 0.6, gust_rate: 0.05, gust_max: 3.0}
+  wind: {speed: 5.0, from_deg: 250, turbulence: 0.6, gust_rate: 0.05, gust_max: 3.0,
+         turbulence_severity: light}   # MIL-F-8785C von Karman (replaces `turbulence`)
+  atmosphere_model: {model: nrlmsise00, epoch: "2025-06-21T15:00:00Z", f107: 150, f107a: 150, ap: 4}
 guidance:
   cargo_g_limit: 6.0
   rise_time: 6.0
