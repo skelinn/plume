@@ -165,7 +165,8 @@ class GridFinSpec(Spec):
     count: int = Field(4, ge=2)
     z: float = Field(description="hinge height in body z")
     span: float = Field(0.5, gt=0, description="radial extent of each fin, m")
-    chord: float = Field(0.45, gt=0, description="axial depth of the lattice, m")
+    chord: float = Field(0.45, gt=0, description="panel width across the flow (tangential), m")
+    depth: float = Field(0.12, gt=0, description="lattice depth along the flow (axial), m")
     radius: float | None = Field(
         None, description="fin centre radius; default hull radius + span/2"
     )
@@ -273,8 +274,27 @@ class WindSpec(Spec):
     gust_duration: tuple[float, float] = (1.0, 4.0)
 
 
+class EarthSpec(Spec):
+    """Earth model used when ``WorldSpec.gravity == "wgs84"``."""
+
+    origin_lat_deg: float = Field(0.0, ge=-90, le=90, description="world-frame origin, geodetic")
+    origin_lon_deg: float = Field(0.0, ge=-180, le=360)
+    origin_height: float = Field(0.0, description="origin height above the ellipsoid, m")
+    shape: Literal["wgs84", "sphere"] = "wgs84"
+    radius: float = Field(6_371_008.8, gt=0, description="sphere radius when shape == sphere")
+    rotating: bool = True
+    zonal_degree: int = Field(6, ge=0, le=6, description="highest zonal harmonic (0 = point mass)")
+    gm: float | None = Field(None, description="override gravitational parameter, m^3/s^2")
+    omega: float | None = Field(None, description="override rotation rate, rad/s")
+    j2: float | None = Field(None, description="override J2")
+
+
 class WorldSpec(Spec):
-    gravity: Literal["flat", "spherical"] = "flat"
+    fidelity: Literal["fast", "high"] = Field(
+        "fast", description="fast: simplified models (RL, iteration); high: verification-grade models"
+    )
+    gravity: Literal["flat", "spherical", "wgs84"] = "flat"
+    earth: EarthSpec = Field(default_factory=EarthSpec)
     g: float = Field(9.80665, ge=0, description="flat gravity only: acceleration, m/s^2")
     atmosphere: bool = True
     temperature_offset: float = 0.0
@@ -415,8 +435,10 @@ def load_landing_env(path_or_name: str | Path = "landing") -> LandingEnvSpec:
 # --------------------------------------------------------------------------- cargo hop missions
 class SiteSpec(Spec):
     name: str
-    u: float  # map east (m) from the launch-site origin
-    v: float  # map north (m)
+    u: float = 0.0  # map east (m) from the launch-site origin (azimuthal equidistant)
+    v: float = 0.0  # map north (m)
+    lat: float | None = Field(None, ge=-90, le=90, description="geodetic latitude, deg (WGS-84)")
+    lon: float | None = Field(None, ge=-180, le=360, description="geodetic longitude, deg (WGS-84)")
 
 
 class MissionTerrainSpec(Spec):

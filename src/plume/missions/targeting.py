@@ -19,8 +19,15 @@ from plume.physics.pointmass import PointMassSim
 
 def kepler_impact(r: np.ndarray, v: np.ndarray, gravity: SphericalGravity, r_target: float):
     """Impact point (frame coordinates) of a vacuum ballistic arc on a sphere of radius
-    ``r_target``, or ``None`` if the arc never reaches it."""
+    ``r_target``, or ``None`` if the arc never reaches it.
+
+    For a rotating (Earth-fixed) frame the arc is solved in inertial space and the impact
+    point is rotated back by the Earth's rotation over the time of flight.
+    """
+    rotating = bool(getattr(gravity, "rotating", False))
     rr = r - gravity.center
+    if rotating:
+        v = v + np.cross(gravity.omega_w, rr)
     rn = float(np.linalg.norm(rr))
     h = np.cross(rr, v)
     hn = float(np.linalg.norm(h))
@@ -44,6 +51,25 @@ def kepler_impact(r: np.ndarray, v: np.ndarray, gravity: SphericalGravity, r_tar
     rhat = rr / rn
     t_hat = np.cross(h / hn, rhat)
     direction = math.cos(dnu) * rhat + math.sin(dnu) * t_hat
+    if rotating and e < 1.0:
+        # time of flight from the eccentric anomalies, then undo the Earth's rotation
+        a_sm = p / (1.0 - e * e)
+
+        def mean_anomaly(nu):
+            ecc = 2.0 * math.atan(math.sqrt((1.0 - e) / (1.0 + e)) * math.tan(nu / 2.0))
+            return ecc - e * math.sin(ecc)
+
+        n = math.sqrt(mu / a_sm**3)
+        tof = ((mean_anomaly(nu0 + dnu) - mean_anomaly(nu0)) % (2 * math.pi)) / n
+        w = gravity.omega_w
+        wn = float(np.linalg.norm(w))
+        k = w / wn
+        ang = -wn * tof
+        direction = (
+            direction * math.cos(ang)
+            + np.cross(k, direction) * math.sin(ang)
+            + k * float(k @ direction) * (1.0 - math.cos(ang))
+        )
     return gravity.center + r_target * direction
 
 

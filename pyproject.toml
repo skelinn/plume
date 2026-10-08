@@ -39,6 +39,16 @@ viz = [
     "uvicorn>=0.29",
     "websockets>=12.0",
 ]
+hifi = [
+    "nrlmsise00>=0.1",
+]
+geo = [
+    "rasterio>=1.4",
+    "pyproj>=3.6",
+]
+validation = [
+    "rocketpy>=1.6",
+]
 dev = [
     "pytest>=8.0",
     "pytest-xdist>=3.5",
@@ -71,6 +81,8 @@ explicit = true
 testpaths = ["tests"]
 markers = [
     "slow: long-running tests (deselect with -m 'not slow')",
+    "vv: verification & validation suite (NASA check cases, analytic, cross-tool)",
+    "network: needs internet access (skipped offline)",
     "rl: tests that need the rl extra",
 ]
 

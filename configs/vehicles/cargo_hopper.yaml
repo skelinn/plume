@@ -62,7 +62,8 @@ grid_fins:
   count: 4
   z: 11.2                 # just below the nose cone, far above the CG -> long lever arm
   span: 0.55
-  chord: 0.45
+  chord: 0.45              # panel width (tangential)
+  depth: 0.12              # lattice depth along the flow
   cn_alpha: 3.0
   cd0: 1.2
   max_deflection_deg: 20.0

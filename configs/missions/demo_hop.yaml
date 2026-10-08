@@ -8,7 +8,8 @@ terrain:
   base: demo_region
   launch_tile: demo_pad_a
   landing_tile: demo_lz_b
-launch: {name: Pad A, u: 0.0, v: 0.0}
+# lat/lon: nominal geodetic anchor used only by --fidelity high (the terrain is synthetic)
+launch: {name: Pad A, u: 0.0, v: 0.0, lat: 31.0, lon: -104.0}
 target: {name: Site B, u: 730000.0, v: 170000.0}
 target_radius: 50.0
 world:

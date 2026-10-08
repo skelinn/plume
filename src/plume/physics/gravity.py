@@ -104,9 +104,32 @@ class SphericalGravity:
         return s * n[0] / sh, s * n[1] / sh, rn - self.earth_radius
 
 
-def gravity_from_world(world) -> FlatGravity | SphericalGravity:
+def earth_params_from_spec(es):
+    from plume.physics.earth import EGM96_J, WGS84_GM, WGS84_OMEGA, EarthParams
+
+    gm = es.gm if es.gm is not None else WGS84_GM
+    omega = (es.omega if es.omega is not None else WGS84_OMEGA) if es.rotating else 0.0
+    zonal = list(EGM96_J[: max(es.zonal_degree - 1, 0)])
+    if es.j2 is not None and zonal:
+        zonal[0] = es.j2
+    if es.shape == "sphere":
+        return EarthParams(a=es.radius, f=0.0, gm=gm, omega=omega, zonal=tuple(zonal))
+    return EarthParams(gm=gm, omega=omega, zonal=tuple(zonal))
+
+
+def gravity_from_world(world):
     if world.gravity == "flat":
         return FlatGravity(world.g)
+    if world.gravity == "wgs84":
+        from plume.physics.earth import EarthGravity
+
+        es = world.earth
+        return EarthGravity(
+            lat0=math.radians(es.origin_lat_deg),
+            lon0=math.radians(es.origin_lon_deg),
+            h0=es.origin_height,
+            params=earth_params_from_spec(es),
+        )
     return SphericalGravity()
 
 

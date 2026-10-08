@@ -1,0 +1,4 @@
+# Downloaded Copernicus DEM tiles (re-fetched on demand; never commit)
+*.tif
+*.part
+*.missing

@@ -1,0 +1,44 @@
+name: real_pad_a
+x_min: -200.0
+x_max: 200.0
+y_min: -200.0
+y_max: 200.0
+source: Copernicus DEM GLO-30
+product: glo30
+tiles:
+- Copernicus_DSM_COG_10_N32_00_W107_00_DEM
+sea_level_tiles: []
+overview_factor: 1
+source_resolution_m: 30.87
+source_pixel_deg: 0.0002777777777777778
+resolution_m: 2.0
+resampling: bilinear
+projection: +proj=aeqd +lat_0=32.9900000000 +lon_0=-106.9860000000 +datum=WGS84 +units=m
+  +no_defs
+origin_lat: 32.99
+origin_lon: -106.986
+horizontal_datum: WGS 84
+vertical_datum: EGM2008 geoid (orthometric height, m above mean sea level)
+synthetic_detail: false
+attribution: "Contains modified Copernicus Sentinel data / \xA9 DLR e.V. 2010-2014\
+  \ and \xA9 Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by\
+  \ the European Union and ESA; all rights reserved"
+licence: 'Copernicus DEM licence (GLO-30 Public / GLO-90): free of charge, worldwide,
+  for any lawful use incl. commercial, with attribution'
+site_latlon:
+- 32.99
+- -106.986
+site_xy:
+- 0.0
+- 0.0
+modifications:
+- type: flattened_pad
+  centre_xy:
+  - 0.0
+  - 0.0
+  radius_m: 30.0
+  blend_m: 60.0
+  height_m: 1411.587
+image: real_pad_a.png
+z_min: 1409.1573486328125
+z_max: 1413.6922607421875

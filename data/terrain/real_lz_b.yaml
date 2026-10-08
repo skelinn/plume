@@ -1,0 +1,51 @@
+name: real_lz_b
+x_min: 704101.9955655
+x_max: 706101.9955655
+y_min: 285709.74071070756
+y_max: 287709.74071070756
+source: Copernicus DEM GLO-30
+product: glo30
+tiles:
+- Copernicus_DSM_COG_10_N35_00_W100_00_DEM
+sea_level_tiles: []
+overview_factor: 1
+source_resolution_m: 30.87
+source_pixel_deg: 0.0002777777777777778
+resolution_m: 2.5
+resampling: bilinear
+projection: +proj=aeqd +lat_0=32.9900000000 +lon_0=-106.9860000000 +datum=WGS84 +units=m
+  +no_defs
+origin_lat: 32.99
+origin_lon: -106.986
+horizontal_datum: WGS 84
+vertical_datum: EGM2008 geoid (orthometric height, m above mean sea level)
+synthetic_detail: true
+attribution: "Contains modified Copernicus Sentinel data / \xA9 DLR e.V. 2010-2014\
+  \ and \xA9 Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by\
+  \ the European Union and ESA; all rights reserved"
+licence: 'Copernicus DEM licence (GLO-30 Public / GLO-90): free of charge, worldwide,
+  for any lawful use incl. commercial, with attribution'
+synthetic_detail_params:
+  generator: plume.terrain.dem.add_synthetic_detail
+  seed: 12
+  roughness_rms_m: 0.15
+  cutoff_wavelength_m: 92.61
+  spectral_beta: 2.4
+  rock_density_per_m2: 0.0001
+  rock_count: 425
+  rock_height_m:
+  - 0.1
+  - 0.6
+  rock_radius_m:
+  - 0.6
+  - 2.0
+  note: procedural detail below DEM resolution -- NOT measured terrain
+site_latlon:
+- 35.335
+- -99.225
+site_xy:
+- 705101.9955655
+- 286709.74071070756
+image: real_lz_b.png
+z_min: 585.9930031990651
+z_max: 601.2350299217404

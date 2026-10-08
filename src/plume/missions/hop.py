@@ -139,8 +139,19 @@ class MissionWorld:
 
     def scene_meta(self) -> dict:
         t = self.spec.terrain
+        geo = {}
+        if hasattr(self.gravity, "lat0"):
+            geo = {
+                "frame": "wgs84",
+                "origin": {
+                    "lat_deg": math.degrees(self.gravity.lat0),
+                    "lon_deg": math.degrees(self.gravity.lon0),
+                    "height": self.gravity.h0,
+                },
+            }
         return {
             "frame": "spherical",
+            **geo,
             "earth_radius": self.gravity.earth_radius,
             "ground": {
                 "type": "terrain",
@@ -378,13 +389,15 @@ class HopAutopilot:
 
 
 # ----------------------------------------------------------------------------- planning
-def plan_ascent(spec: MissionSpec, mw: MissionWorld, vehicle, cargo: float) -> tuple[float, float]:
+def plan_ascent(
+    spec: MissionSpec, mw: MissionWorld, vehicle, cargo: float, world=None
+) -> tuple[float, float]:
     """Choose (vertical rise time, pitch-kick angle) that reach the target range with the
     most propellant left (3-DOF gravity turn, vacuum impact prediction)."""
     g = spec.guidance
     gravity = mw.gravity
-    world = spec.world.model_copy(
-        update={"wind": spec.world.wind.model_copy(update={"speed": 0.0})}
+    world = (world or spec.world).model_copy(
+        update={"wind": (world or spec.world).wind.model_copy(update={"speed": 0.0})}
     )
     pm = PointMassSim(vehicle, world, cargo_mass=cargo)
     up0 = gravity.up(mw.pad_a)
@@ -472,6 +485,39 @@ def plan_ascent(spec: MissionSpec, mw: MissionWorld, vehicle, cargo: float) -> t
 
 
 # ----------------------------------------------------------------------------- runner
+def mission_frame(spec: MissionSpec, fidelity: str | None = None):
+    """World frame, gravity model and site coordinates for a mission.
+
+    * fast (default): non-rotating spherical Earth, map coordinates from ``u``/``v``.
+    * high: WGS-84 ellipsoid with J2-J6 gravity, rotating Earth; the world frame is the
+      local East-North-Up frame at the launch site (``launch.lat``/``lon`` required),
+      and a target given by ``lat``/``lon`` is projected to map coordinates with the same
+      azimuthal-equidistant projection the terrain uses.
+    """
+    from plume.physics.gravity import gravity_from_world
+
+    fid = fidelity or spec.world.fidelity
+    if fid == "high" or spec.world.gravity == "wgs84":
+        a, b = spec.launch, spec.target
+        if a.lat is None or a.lon is None:
+            raise ValueError("high-fidelity missions need launch.lat / launch.lon (WGS-84 degrees)")
+        if b.lat is not None and b.lon is not None:
+            from plume.terrain.dem import site_projection
+
+            u, v = site_projection(a.lat, a.lon).forward(b.lat, b.lon)
+            spec = spec.model_copy(deep=True)
+            spec.target.u, spec.target.v = float(u), float(v)
+        earth = spec.world.earth.model_copy(
+            update={"origin_lat_deg": a.lat, "origin_lon_deg": a.lon, "origin_height": 0.0}
+        )
+        world = spec.world.model_copy(
+            update={"fidelity": "high", "gravity": "wgs84", "earth": earth, "ground": "none"}
+        )
+        return spec, world, gravity_from_world(world)
+    world = spec.world.model_copy(update={"gravity": "spherical", "ground": "none"})
+    return spec, world, SphericalGravity()
+
+
 @dataclass
 class HopRun:
     result: MissionResult
@@ -485,9 +531,10 @@ def run_mission(
     cargo_mass: float | None = None,
     on_frame=None,
     kick_deg: float | None = None,
+    fidelity: str | None = None,
 ) -> HopRun:
     spec = load_mission(spec) if isinstance(spec, str) else spec
-    gravity = SphericalGravity()
+    spec, world, gravity = mission_frame(spec, fidelity)
     mw = MissionWorld(spec, gravity)
     cargo = (
         cargo_mass
@@ -498,13 +545,12 @@ def run_mission(
     if cargo is not None:
         vehicle = vehicle.with_cargo(cargo)
     cargo = vehicle.cargo.mass
-    world = spec.world.model_copy(update={"gravity": "spherical", "ground": "none"})
     rise = spec.guidance.rise_time
     if kick_deg is None:
         if spec.guidance.kick_angle_deg is not None:
             kick_deg = spec.guidance.kick_angle_deg
         else:
-            rise, kick_deg = plan_ascent(spec, mw, vehicle, cargo)
+            rise, kick_deg = plan_ascent(spec, mw, vehicle, cargo, world)
 
     sim = RocketSim(
         vehicle, world, seed=seed, tiles=mw.ground_tiles(), ground_height=mw.ground_height
@@ -547,7 +593,10 @@ def run_mission(
         max_alt = max(max_alt, st.altitude)
         k += 1
         if k % rec_every == 0:
-            frame = sim.frame(phase)
+            impact = ap.predicted_impact
+            frame = sim.frame(
+                phase, {"impact": impact if impact is not None else mw.pad_b}
+            )
             rec.record(frame)
             if on_frame:
                 on_frame(frame)
@@ -569,7 +618,10 @@ def run_mission(
             break
     else:
         failure = "timeout"
-    rec.record(sim.frame(ap.phase), force=True)
+    impact = ap.predicted_impact
+    rec.record(
+        sim.frame(ap.phase, {"impact": impact if impact is not None else mw.pad_b}), force=True
+    )
     for t, kind, label in ap.events:
         rec.event(t, kind, label)
     if sim.touchdown is not None and sim.t > 30:

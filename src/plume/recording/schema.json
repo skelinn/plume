@@ -14,6 +14,20 @@
       "properties": {
         "title": { "type": "string" },
         "source": { "enum": ["sim", "real"] },
+        "fidelity": { "enum": ["fast", "high"] },
+        "models": { "type": "object", "description": "physics model provenance" },
+        "dispersion": {
+          "type": "object",
+          "description": "Monte Carlo landing dispersion at the target (local east/north, m)",
+          "properties": {
+            "center": { "$ref": "#/$defs/vec3" },
+            "semi_axes_m": { "type": "array", "items": { "type": "number" } },
+            "angle_rad": { "type": "number", "description": "major axis from east toward north" },
+            "probability": { "type": "number" },
+            "runs": { "type": "integer" },
+            "points": { "type": "array", "items": { "$ref": "#/$defs/vec3" } }
+          }
+        },
         "created": { "type": "string" },
         "plume_version": { "type": "string" },
         "controller": { "type": "string" },
@@ -129,6 +143,13 @@
         "wind": { "type": "array", "items": { "$ref": "#/$defs/vec3" } },
         "phase": { "type": "array", "items": { "type": "string" } },
         "fins": { "type": "array", "items": { "type": "array", "items": { "type": "number" } }, "description": "grid-fin deflections, rad" },
+        "v_air": { "type": "array", "items": { "$ref": "#/$defs/vec3" }, "description": "air-relative velocity, world" },
+        "f_thrust": { "type": "array", "items": { "$ref": "#/$defs/vec3" }, "description": "thrust force, world, N" },
+        "f_aero": { "type": "array", "items": { "$ref": "#/$defs/vec3" }, "description": "aerodynamic (+fins, parachute) force, world, N" },
+        "alpha": { "type": "array", "items": { "type": "number" }, "description": "angle of attack, rad" },
+        "beta": { "type": "array", "items": { "type": "number" }, "description": "sideslip, rad" },
+        "aoa_total": { "type": "array", "items": { "type": "number" }, "description": "total angle between body axis and relative wind, rad" },
+        "impact": { "type": "array", "items": { "$ref": "#/$defs/vec3" }, "description": "guidance's predicted impact point, world" },
         "fins_out": { "type": "array", "items": { "type": "number" }, "description": "1 = grid fins deployed, 0 = stowed" }
       }
     },

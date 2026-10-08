@@ -162,6 +162,42 @@ class Touchdown:
     position: np.ndarray
 
 
+# --------------------------------------------------------------------------- RK4-stage forces
+_STAGE_SIMS: dict = {}
+_STAGE_NEXT_ID = [1]
+
+
+def _passive_callback(m, d) -> None:
+    # MuJoCo also calls this while compiling/initialising unrelated models: be defensive
+    try:
+        if m.nuserdata < 1:
+            return
+        key = int(d.userdata[0])
+    except Exception:
+        return
+    ref = _STAGE_SIMS.get(key)
+    if ref is None:
+        return
+    sim = ref()
+    if sim is None:
+        _STAGE_SIMS.pop(int(d.userdata[0]), None)
+        return
+    sim._stage_callback(m, d)
+
+
+def _register_stage_sim(sim) -> None:
+    """Route MuJoCo's process-global passive callback to this simulator (by id)."""
+    import weakref
+
+    if mujoco.get_mjcb_passive() is not _passive_callback:
+        mujoco.set_mjcb_passive(_passive_callback)
+    sid = _STAGE_NEXT_ID[0]
+    _STAGE_NEXT_ID[0] += 1
+    sim.data.userdata[0] = sid
+    sim._stage_id = sid
+    _STAGE_SIMS[sid] = weakref.ref(sim)
+
+
 class RocketSim:
     """6-DOF rocket simulation for a single vehicle.
 
@@ -199,6 +235,11 @@ class RocketSim:
         self.rcs = RCS(vehicle.rcs, vehicle, nominal.cg_z)
         self.aero = Aero(vehicle.aero, vehicle.geometry)
         self.recovery = Recovery(vehicle.recovery)
+        self.extra_forces: list = []
+        self._rotating = bool(getattr(self.gravity, "rotating", False))
+        # high fidelity: forces are evaluated at every RK4 stage (true 4th order)
+        self._stage_forces = self.world.fidelity == "high"
+        self._stage_ctx = None
         self.grid_fins = (
             GridFins(vehicle.grid_fins, vehicle.geometry) if vehicle.grid_fins else None
         )
@@ -206,15 +247,24 @@ class RocketSim:
         self.has_ground = self.world.ground != "none" or bool(tiles)
         self._ground_height = ground_height or (lambda p: 0.0)
 
-        self.model = mujoco.MjModel.from_xml_string(
-            build_mjcf(vehicle, self.world, tiles, self.mass_model.dry_inertia)
-        )
-        self.data = mujoco.MjData(self.model)
+        # MuJoCo's Python bindings cannot run a passive callback while compiling a
+        # model, so the (process-global) callback is suspended during compilation
+        saved_cb = mujoco.get_mjcb_passive()
+        mujoco.set_mjcb_passive(None)
+        try:
+            self.model = mujoco.MjModel.from_xml_string(
+                build_mjcf(vehicle, self.world, tiles, self.mass_model.dry_inertia)
+            )
+            self.data = mujoco.MjData(self.model)
+        finally:
+            mujoco.set_mjcb_passive(saved_cb)
         for k, tile in enumerate(tiles or []):
             _, _, norm = tile.hfield_params()
             adr = self.model.hfield_adr[k]
             self.model.hfield_data[adr : adr + norm.size] = norm.ravel()
         self.bid = self.model.body("rocket").id
+        if self._stage_forces:
+            _register_stage_sim(self)
         self.wet_bid = self.model.body("wet").id
         self.dry_z = vehicle.mass.dry_cg_z
 
@@ -285,6 +335,7 @@ class RocketSim:
         self.prop_used = 0.0
         self.rcs_used = 0.0
         self.touchdown: Touchdown | None = None
+        self.last_forces = (np.zeros(3), np.zeros(3), np.zeros(3))
         self.airborne = False  # touchdown is only recorded after leaving the ground
         self.legs_down = 0
         self.body_contact = False
@@ -293,6 +344,8 @@ class RocketSim:
         # contact regularisation depends on mass/inertia; mj_setConst also resets qpos
         mujoco.mj_setConst(self.model, self.data)
         mujoco.mj_resetData(self.model, self.data)
+        if self._stage_forces:
+            self.data.userdata[0] = self._stage_id  # mj_resetData clears it
         q = np.asarray(quat, dtype=float)
         self.data.qpos[:3] = pos
         self.data.qpos[3:7] = q / np.linalg.norm(q)
@@ -402,44 +455,40 @@ class RocketSim:
         com = pos + R[:, 2] * cgz
         v_com = data.qvel[:3] + R @ _cross_z(omega_b, cgz)
 
-        # --- forces in body frame, torques about the CG
+        # --- quantities held over the step (actuator and environment states)
         f_t, tau_t = _ZERO3, _ZERO3
         if thrust > 0:
             f_t = thrust * self.engine.direction()
             tau_t = _z_cross(self.vehicle.engine.gimbal_z - cgz, f_t)
         f_r, tau_r, mdot_r = self.rcs.update(cgz, self.rcs_prop, dt)
-
         wind = self.wind.at(alt)
         if self.gravity.curved and wind.any():
             wind = self.gravity.local_to_frame(com, wind)
         self.wind_now = wind
-        v_air_w = v_com - wind
-        f_a, tau_a, q, mach = self.aero.forces(
-            R.T @ v_air_w, omega_b, cgz, atm.density, atm.speed_of_sound
-        )
-        self.q_dyn, self.mach = q, mach
         if self.grid_fins is not None:
             self.grid_fins.update(dt)
-            f_g, tau_g = self.grid_fins.forces(R.T @ v_air_w, omega_b, cgz, atm.density)
-            f_a = f_a + f_g
-            tau_a = tau_a + tau_g
-
-        g = self.gravity.accel(com + (0.5 * dt) * v_com)
-        f_w = R @ (f_t + f_r + f_a) + mp.mass * g
-        f_chute = None
+        cda = 0.0
         if self.recovery.enabled:
             up = self.gravity.up(com)
             self.recovery.update(self.t, alt - self.launch_altitude, float(v_com @ up))
             cda = self.recovery.cd_area(self.t)
-            if cda > 0:
-                va = float(np.linalg.norm(v_air_w))
-                f_chute = -0.5 * atm.density * cda * va * v_air_w
-                f_w = f_w + f_chute
-        # xfrc_applied acts at the dry body's CG: shift the torque from the total CG
-        tau_w = R @ (tau_t + tau_r + tau_a + _z_cross(cgz - self.dry_z, R.T @ f_w))
+        ctx = (mp, f_t, tau_t, f_r, tau_r, wind, cda)
+
+        # --- forces at the start of the step: applied directly in fast mode; in high
+        # fidelity they are re-evaluated at every RK4 stage by the passive callback
+        lead = 0.0 if self._stage_forces else 0.5 * dt
+        f_w, tau_w, diag = self._forces_at(pos, R, data.qvel[:3], omega_b, ctx, lead)
+        f_a, tau_a, q, mach, v_air_w, f_chute, g = diag
+        self.q_dyn, self.mach = q, mach
+        # keep the force breakdown for engineering replays / analysis
+        self.last_forces = (R @ f_t, R @ f_a + (f_chute if f_chute is not None else 0.0), v_air_w)
         xfrc = data.xfrc_applied[self.bid]
-        xfrc[:3] = f_w
-        xfrc[3:] = tau_w
+        if self._stage_forces:
+            xfrc[:] = 0.0
+            self._stage_ctx = ctx
+        else:
+            xfrc[:3] = f_w
+            xfrc[3:] = tau_w
 
         # --- bookkeeping (power at the start of the step x dt)
         work = self.work
@@ -453,6 +502,7 @@ class RocketSim:
             work["rcs"] += (float(f_r @ (R.T @ v_com)) + float(tau_r @ omega_b)) * dt
 
         mujoco.mj_step(self.model, data)
+        self._stage_ctx = None
         if self.rail is not None:
             self._apply_rail()
         self.t += dt
@@ -523,6 +573,57 @@ class RocketSim:
         data.qpos[3:7] = r["quat"]
         data.qvel[:3] = v_along * r["dir"]
         data.qvel[3:6] = 0.0
+
+    # ------------------------------------------------------------------ force model
+    def _forces_at(self, pos, R, vel_origin, omega_b, ctx, gravity_lead: float = 0.0):
+        """Total force (world) and torque (world, about the *dry* CG, where MuJoCo applies
+        it) for a kinematic state. ``ctx`` holds what is held constant over the step."""
+        mp, f_t, tau_t, f_r, tau_r, wind, cda = ctx
+        cgz = mp.cg_z
+        com = pos + R[:, 2] * cgz
+        v_com = vel_origin + R @ _cross_z(omega_b, cgz)
+        alt = self.gravity.altitude(com)
+        atm = self.atmosphere.at(alt)
+        v_air_w = v_com - wind
+        v_air_b = R.T @ v_air_w
+        f_a, tau_a, q, mach = self.aero.forces(
+            v_air_b, omega_b, cgz, atm.density, atm.speed_of_sound
+        )
+        if self.grid_fins is not None:
+            f_g, tau_g = self.grid_fins.forces(v_air_b, omega_b, cgz, atm.density)
+            f_a = f_a + f_g
+            tau_a = tau_a + tau_g
+        # externally modelled forces (verification vehicles, payload effects, ...)
+        for fn in self.extra_forces:
+            f_x, tau_x = fn(self, v_air_w, atm, R, omega_b, mp)
+            f_a = f_a + R.T @ f_x
+            tau_a = tau_a + tau_x
+        p_g = com + gravity_lead * v_com
+        g = self.gravity.accel(p_g)
+        f_w = R @ (f_t + f_r + f_a) + mp.mass * g
+        tau_b = tau_t + tau_r + tau_a
+        if self._rotating:
+            # Earth-fixed (rotating) world frame: Coriolis + centrifugal, attitude coupling
+            f_w = f_w + mp.mass * self.gravity.fictitious_accel(p_g, v_com)
+            tau_b = tau_b + self.gravity.attitude_torque(R, omega_b, mp.inertia)
+        f_chute = None
+        if cda > 0:
+            va = float(np.linalg.norm(v_air_w))
+            f_chute = -0.5 * atm.density * cda * va * v_air_w
+            f_w = f_w + f_chute
+        # shift the torque from the total CG to the dry CG (the xfrc / applyFT point)
+        tau_w = R @ (tau_b + _z_cross(cgz - self.dry_z, R.T @ f_w))
+        return f_w, tau_w, (f_a, tau_a, q, mach, v_air_w, f_chute, g)
+
+    def _stage_callback(self, m, d) -> None:
+        """MuJoCo passive-force callback, called inside every RK4 stage: evaluate the
+        force model at the stage state so state-dependent forces keep 4th order."""
+        ctx = self._stage_ctx
+        if ctx is None:
+            return
+        R = d.xmat[self.bid].reshape(3, 3)
+        f_w, tau_w, _ = self._forces_at(d.qpos[:3], R, d.qvel[:3], d.qvel[3:6], ctx)
+        mujoco.mj_applyFT(m, d, f_w, tau_w, d.xipos[self.bid], self.bid, d.qfrc_passive)
 
     def _contacts(self) -> None:
         feet = set()
@@ -616,6 +717,8 @@ class RocketSim:
         ke_t = 0.5 * self.mp.mass * float(st.vel_com @ st.vel_com)
         ke_r = 0.5 * float(w @ (I * w))
         pe = self.mp.mass * self.gravity.potential(st.com)
+        if self._rotating:  # Jacobi integral of the rotating frame
+            pe += self.mp.mass * self.gravity.centrifugal_potential(st.com)
         return {
             "kinetic": ke_t + ke_r,
             "translational": ke_t,
@@ -629,8 +732,14 @@ class RocketSim:
         st = self.state
         return st.rot @ (self.mp.inertia * st.omega)
 
-    def frame(self, phase: str | None = None) -> dict:
-        """A replay frame for :class:`plume.recording.Recorder`."""
+    def frame(self, phase: str | None = None, extra: dict | None = None) -> dict:
+        """A replay frame for :class:`plume.recording.Recorder`.
+
+        Besides the state it carries the engineering quantities the viewer's
+        engineering overlay draws: air-relative velocity, thrust and aerodynamic
+        force vectors (world frame, N) and the aerodynamic angles (rad; body +z is
+        the vehicle's forward axis, so alpha = atan2(v_x, v_z), beta = asin(v_y/|v|)).
+        """
         st = self.state
         f = {
             "t": st.t,
@@ -653,9 +762,33 @@ class RocketSim:
         if self.grid_fins is not None:
             f["fins"] = self.grid_fins.delta.copy()
             f["fins_out"] = 1.0 if self.grid_fins.deployed else 0.0
+        f_thrust, f_aero, v_air = self.last_forces
+        f["v_air"] = v_air
+        f["f_thrust"] = f_thrust
+        f["f_aero"] = f_aero
+        vb = st.rot.T @ v_air
+        sp = float(np.linalg.norm(vb))
+        f["alpha"] = math.atan2(float(vb[0]), float(vb[2])) if sp > 1e-6 else 0.0
+        f["beta"] = math.asin(max(-1.0, min(1.0, float(vb[1]) / sp))) if sp > 1e-6 else 0.0
+        f["aoa_total"] = math.acos(max(-1.0, min(1.0, float(vb[2]) / sp))) if sp > 1e-6 else 0.0
+        if extra:
+            f.update(extra)
         if phase is not None:
             f["phase"] = phase
         return f
+
+    def model_provenance(self) -> dict:
+        """Which physics models produced this run (recorded in replays and reports)."""
+        return {
+            "fidelity": self.world.fidelity,
+            "gravity": type(self.gravity).__name__,
+            "atmosphere": type(self.atmosphere).__name__,
+            "wind": type(self.wind).__name__,
+            "aero": type(self.aero).__name__,
+            "grid_fins": self.grid_fins is not None,
+            "integrator": "MuJoCo RK4",
+            "dt": self.dt,
+        }
 
     def replay_meta(self, title: str, **extra) -> dict:
         v = self.vehicle
@@ -669,6 +802,8 @@ class RocketSim:
         return {
             "title": title,
             "source": "sim",
+            "fidelity": self.world.fidelity,
+            "models": self.model_provenance(),
             "vehicle": {
                 "name": v.name,
                 "length": v.geometry.length,
@@ -693,6 +828,7 @@ class RocketSim:
                             "z": v.grid_fins.z,
                             "span": v.grid_fins.span,
                             "chord": v.grid_fins.chord,
+                            "depth": v.grid_fins.depth,
                             "radius": self.grid_fins.radius,
                             "max_deflection": self.grid_fins.max_defl,
                         }

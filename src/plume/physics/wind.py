@@ -126,3 +126,48 @@ class WindModel:
                 if v is not None:
                     w = w + decay * v
         return w
+
+
+class TableWind:
+    """Wind profile from a table of altitude vs east/north (and optionally up) components,
+    e.g. a radiosonde or forecast sounding. Linear interpolation, linear extrapolation
+    beyond the table ends. Interface-compatible with :class:`WindModel`."""
+
+    def __init__(self, altitudes, east, north, up=None, extrapolate: bool = True):
+        order = np.argsort(np.asarray(altitudes, dtype=float))
+        self.alt = np.asarray(altitudes, dtype=float)[order]
+        self.e = np.asarray(east, dtype=float)[order]
+        self.n = np.asarray(north, dtype=float)[order]
+        self.u = np.zeros_like(self.e) if up is None else np.asarray(up, dtype=float)[order]
+        self.extrapolate = extrapolate and len(self.alt) >= 2
+        self.speed = float(np.max(np.hypot(self.e, self.n))) if len(self.e) else 0.0
+        self.t = 0.0
+
+    @classmethod
+    def from_speed_direction(cls, altitudes, speeds, from_deg):
+        th = np.radians(np.asarray(from_deg, dtype=float))
+        sp = np.asarray(speeds, dtype=float)
+        return cls(altitudes, -sp * np.sin(th), -sp * np.cos(th))
+
+    @property
+    def enabled(self) -> bool:
+        return bool(np.any(self.e) or np.any(self.n) or np.any(self.u))
+
+    def reset(self, seed=None) -> None:
+        self.t = 0.0
+
+    def step(self, dt: float) -> None:
+        self.t += dt
+
+    def _interp(self, col, h):
+        if self.extrapolate and (h < self.alt[0] or h > self.alt[-1]):
+            i = 0 if h < self.alt[0] else len(self.alt) - 2
+            h0, h1 = self.alt[i], self.alt[i + 1]
+            return col[i] + (col[i + 1] - col[i]) * (h - h0) / (h1 - h0)
+        return float(np.interp(h, self.alt, col))
+
+    def mean_at(self, altitude: float) -> np.ndarray:
+        return np.array([self._interp(self.e, altitude), self._interp(self.n, altitude), self._interp(self.u, altitude)])
+
+    def at(self, altitude: float) -> np.ndarray:
+        return self.mean_at(altitude)

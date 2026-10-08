@@ -173,6 +173,9 @@ def hop(
     seed: int = 0,
     out: Annotated[Path | None, typer.Option(help="replay output path")] = None,
     live: Annotated[bool, typer.Option(help="stream to a running `plume viz`")] = False,
+    fidelity: Annotated[
+        str | None, typer.Option(help="fast | high (WGS-84, rotating Earth, RK4-stage forces)")
+    ] = None,
 ):
     """Fly a point-to-point cargo hop over terrain and score it."""
     from plume.config import load_mission
@@ -183,7 +186,9 @@ def hop(
     if streamer:
         console.print("[dim]streaming to the viewer...[/]")
     with console.status(f"flying {spec.name} (planning ascent, then ~10 min of flight)..."):
-        run = run_mission(spec, seed=seed, cargo_mass=cargo, on_frame=on_frame)
+        run = run_mission(
+            spec, seed=seed, cargo_mass=cargo, on_frame=on_frame, fidelity=fidelity
+        )
     if streamer:
         streamer.end(run.recorder.meta.get("outcome"))
     path = run.recorder.save(out or Path("runs") / f"hop_{spec.name}.plume.json.gz")
@@ -373,6 +378,14 @@ def info(vehicle: Annotated[str, typer.Argument()] = "lander_small"):
     else:
         table.add_row("total impulse", f"{e.total_impulse:,.1f} N s")
     console.print(table)
+
+
+try:  # real-terrain tools (plume terrain fetch | info | hazard)
+    from plume.terrain.cli import terrain_app
+
+    app.add_typer(terrain_app, name="terrain", help="Real-world terrain (Copernicus DEM).")
+except ImportError:  # pragma: no cover
+    pass
 
 
 if __name__ == "__main__":

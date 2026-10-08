@@ -1,4 +1,4 @@
-"""U.S. Standard Atmosphere 1976 (0–86 km), with an exponential tail above."""
+"""U.S. Standard Atmosphere 1976 (0â€“86 km), with an exponential tail above."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import itertools
 import math
 from dataclasses import dataclass
 
-from plume.constants import G0, GAMMA_AIR, P0, R_AIR, R_EARTH
+from plume.constants import G0, GAMMA_AIR, P0, R_AIR
 
 # (base geopotential altitude m, base temperature K, lapse rate K/m)
 _LAYERS = (
@@ -19,6 +19,7 @@ _LAYERS = (
     (71_000.0, 214.65, -0.002),
 )
 _TOP_GEOPOT = 84_852.0  # geopotential altitude of 86 km geometric
+_R0 = 6_356_766.0  # US76 effective Earth radius for the geopotential conversion
 
 
 def _layer_base_pressures() -> list[float]:
@@ -73,7 +74,7 @@ class Atmosphere:
         if not self.enabled:
             return AtmosphereState(_T_TOP, 0.0, 0.0, math.sqrt(GAMMA_AIR * R_AIR * _T_TOP))
         z = max(altitude, -1000.0)
-        h = R_EARTH * z / (R_EARTH + z)  # geopotential altitude
+        h = _R0 * z / (_R0 + z)  # geopotential altitude (US76 uses r0 = 6356.766 km)
         if h <= _TOP_GEOPOT:
             t, p = _standard(h)
         else:

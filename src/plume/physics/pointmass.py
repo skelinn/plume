@@ -69,6 +69,7 @@ class PointMassSim:
         self.wind_fn = wind_fn  # (position, altitude) -> air velocity, frame coordinates
         self.world = world or WorldSpec()
         self.gravity = gravity_from_world(self.world)
+        self._rotating = bool(getattr(self.gravity, "rotating", False))
         self.atmosphere = Atmosphere(self.world.atmosphere, self.world.temperature_offset)
         aero_spec = vehicle.aero.model_copy()
         if cd_scale is not None:
@@ -120,7 +121,10 @@ class PointMassSim:
         cda = cda + self.extra_cda
         if cda > 0 and atm.density > 0 and speed > 1e-9:
             a_ng -= 0.5 * atm.density * cda * speed / m * va
-        return v, a_ng + self.gravity.accel(r), -mdot, thrust, a_ng, alt
+        a = a_ng + self.gravity.accel(r)
+        if self._rotating:  # Earth-fixed world frame: Coriolis + centrifugal
+            a = a + self.gravity.fictitious_accel(r, v)
+        return v, a, -mdot, thrust, a_ng, alt
 
     def run(
         self,

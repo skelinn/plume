@@ -1,0 +1,42 @@
+# Point-to-point cargo hop over REAL terrain (Copernicus DEM GLO-30, see
+# docs/models/terrain.md): Spaceport America, New Mexico -> open farmland beside the
+# Oklahoma Air & Space Port (Clinton-Sherman airfield), Burns Flat, Oklahoma.
+# Geodesic distance 761.2 km, initial azimuth 67.9 deg (ENE) - the same geometry class
+# as demo_hop. Map coordinates u (east) / v (north) are metres in the WGS-84
+# azimuthal-equidistant projection centred on Pad A (plume.terrain.dem.site_projection);
+# lat/lon are the geodetic source of truth (WGS-84, degrees).
+#
+# Terrain regenerated with (see docs/models/terrain.md):
+#   plume terrain fetch --site 32.990,-106.986 --site2 35.335,-99.225 --radius-km 60 --resolution 500 --out data/terrain/real_route.yaml
+#   plume terrain fetch --site 32.990,-106.986 --radius-km 0.2 --resolution 2 --flatten-radius 30 --out data/terrain/real_pad_a.yaml
+#   plume terrain fetch --site 35.335,-99.225 --origin 32.990,-106.986 --radius-km 1 --resolution 2.5 --synthetic-detail --seed 12 --out data/terrain/real_lz_b.yaml
+name: real_hop
+description: 250 kg cargo, Spaceport America NM -> Burns Flat OK (761.2 km), real Copernicus DEM terrain.
+vehicle: cargo_hopper
+cargo_mass: 250
+terrain:
+  base: real_route
+  launch_tile: real_pad_a
+  landing_tile: real_lz_b
+launch: {name: Pad A (Spaceport America), u: 0.0, v: 0.0, lat: 32.990, lon: -106.986}
+target: {name: Site B (Burns Flat), u: 705102.0, v: 286709.74, lat: 35.335, lon: -99.225}
+target_radius: 50.0
+world:
+  gravity: spherical
+  atmosphere: true
+  ground: none
+  dt: 0.01
+  wind: {speed: 5.0, from_deg: 250, turbulence: 0.6, gust_rate: 0.05, gust_max: 3.0}
+guidance:
+  cargo_g_limit: 6.0
+  rise_time: 6.0
+  kick_time: 6.0
+  kick_angle_deg: null       # optimised before flight
+  entry_altitude: 60000.0
+  entry_speed: 1400.0
+  max_flight_path_deg: 38.0
+scoring:
+  success_points: 100
+  accuracy_points: 50
+  fuel_points: 30
+  g_penalty_per_g: 10

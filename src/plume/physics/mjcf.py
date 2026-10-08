@@ -123,7 +123,7 @@ def build_mjcf(
   <option timestep="{_f(world.dt)}" integrator="RK4" gravity="0 0 0" density="0" viscosity="0">
     <flag warmstart="enable"/>
   </option>
-  <size memory="4M"/>
+  <size memory="4M" nuserdata="1"/>
   {asset_xml}
   <worldbody>
     {"".join(ground)}

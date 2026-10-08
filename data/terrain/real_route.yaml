@@ -1,0 +1,93 @@
+name: real_route
+x_min: -60000.0
+x_max: 765500.0
+y_min: -60000.0
+y_max: 347000.0
+source: Copernicus DEM GLO-30
+product: glo30
+tiles:
+- Copernicus_DSM_COG_10_N32_00_W108_00_DEM
+- Copernicus_DSM_COG_10_N32_00_W107_00_DEM
+- Copernicus_DSM_COG_10_N32_00_W106_00_DEM
+- Copernicus_DSM_COG_10_N32_00_W105_00_DEM
+- Copernicus_DSM_COG_10_N32_00_W104_00_DEM
+- Copernicus_DSM_COG_10_N32_00_W103_00_DEM
+- Copernicus_DSM_COG_10_N32_00_W102_00_DEM
+- Copernicus_DSM_COG_10_N32_00_W101_00_DEM
+- Copernicus_DSM_COG_10_N32_00_W100_00_DEM
+- Copernicus_DSM_COG_10_N32_00_W099_00_DEM
+- Copernicus_DSM_COG_10_N33_00_W108_00_DEM
+- Copernicus_DSM_COG_10_N33_00_W107_00_DEM
+- Copernicus_DSM_COG_10_N33_00_W106_00_DEM
+- Copernicus_DSM_COG_10_N33_00_W105_00_DEM
+- Copernicus_DSM_COG_10_N33_00_W104_00_DEM
+- Copernicus_DSM_COG_10_N33_00_W103_00_DEM
+- Copernicus_DSM_COG_10_N33_00_W102_00_DEM
+- Copernicus_DSM_COG_10_N33_00_W101_00_DEM
+- Copernicus_DSM_COG_10_N33_00_W100_00_DEM
+- Copernicus_DSM_COG_10_N33_00_W099_00_DEM
+- Copernicus_DSM_COG_10_N34_00_W108_00_DEM
+- Copernicus_DSM_COG_10_N34_00_W107_00_DEM
+- Copernicus_DSM_COG_10_N34_00_W106_00_DEM
+- Copernicus_DSM_COG_10_N34_00_W105_00_DEM
+- Copernicus_DSM_COG_10_N34_00_W104_00_DEM
+- Copernicus_DSM_COG_10_N34_00_W103_00_DEM
+- Copernicus_DSM_COG_10_N34_00_W102_00_DEM
+- Copernicus_DSM_COG_10_N34_00_W101_00_DEM
+- Copernicus_DSM_COG_10_N34_00_W100_00_DEM
+- Copernicus_DSM_COG_10_N34_00_W099_00_DEM
+- Copernicus_DSM_COG_10_N35_00_W108_00_DEM
+- Copernicus_DSM_COG_10_N35_00_W107_00_DEM
+- Copernicus_DSM_COG_10_N35_00_W106_00_DEM
+- Copernicus_DSM_COG_10_N35_00_W105_00_DEM
+- Copernicus_DSM_COG_10_N35_00_W104_00_DEM
+- Copernicus_DSM_COG_10_N35_00_W103_00_DEM
+- Copernicus_DSM_COG_10_N35_00_W102_00_DEM
+- Copernicus_DSM_COG_10_N35_00_W101_00_DEM
+- Copernicus_DSM_COG_10_N35_00_W100_00_DEM
+- Copernicus_DSM_COG_10_N35_00_W099_00_DEM
+- Copernicus_DSM_COG_10_N36_00_W108_00_DEM
+- Copernicus_DSM_COG_10_N36_00_W107_00_DEM
+- Copernicus_DSM_COG_10_N36_00_W106_00_DEM
+- Copernicus_DSM_COG_10_N36_00_W105_00_DEM
+- Copernicus_DSM_COG_10_N36_00_W104_00_DEM
+- Copernicus_DSM_COG_10_N36_00_W103_00_DEM
+- Copernicus_DSM_COG_10_N36_00_W102_00_DEM
+- Copernicus_DSM_COG_10_N36_00_W101_00_DEM
+- Copernicus_DSM_COG_10_N36_00_W100_00_DEM
+- Copernicus_DSM_COG_10_N36_00_W099_00_DEM
+sea_level_tiles: []
+overview_factor: 8
+source_resolution_m: 246.96
+source_pixel_deg: 0.0022222222222222222
+resolution_m: 500.0
+resampling: bilinear
+projection: +proj=aeqd +lat_0=32.9900000000 +lon_0=-106.9860000000 +datum=WGS84 +units=m
+  +no_defs
+origin_lat: 32.99
+origin_lon: -106.986
+horizontal_datum: WGS 84
+vertical_datum: EGM2008 geoid (orthometric height, m above mean sea level)
+synthetic_detail: false
+attribution: "Contains modified Copernicus Sentinel data / \xA9 DLR e.V. 2010-2014\
+  \ and \xA9 Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by\
+  \ the European Union and ESA; all rights reserved"
+licence: 'Copernicus DEM licence (GLO-30 Public / GLO-90): free of charge, worldwide,
+  for any lawful use incl. commercial, with attribution'
+site_a_latlon:
+- 32.99
+- -106.986
+site_b_latlon:
+- 35.335
+- -99.225
+site_a:
+- 0.0
+- 0.0
+site_b:
+- 705101.996
+- 286709.741
+route_length_m: 761164.4
+route_azimuth_deg: 67.872
+image: real_route.png
+z_min: 297.4970703125
+z_max: 3847.5703125
