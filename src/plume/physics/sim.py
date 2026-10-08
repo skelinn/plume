@@ -24,6 +24,7 @@ from plume.config import VehicleSpec, WorldSpec
 from plume.constants import G0
 from plume.physics.aero import Aero
 from plume.physics.atmosphere import atmosphere_from_world
+from plume.physics.gear import LandingGear, soil_spec
 from plume.physics.gravity import gravity_from_world
 from plume.physics.gridfins import GridFins
 from plume.physics.massprops import MassModel, MassProps
@@ -258,6 +259,9 @@ class RocketSim:
     ground_height:
         Optional callable ``f(p_world) -> terrain height above datum`` used for AGL
         and crash detection away from tiles. Defaults to the plane at 0.
+    ship:
+        Optional :class:`plume.physics.ship.ShipModel`: a kinematically driven deck to
+        land on (flat world). AGL and touchdown speeds are then relative to the deck.
     """
 
     def __init__(
@@ -267,6 +271,7 @@ class RocketSim:
         seed: int | None = None,
         tiles: list[GroundTile] | None = None,
         ground_height: Callable[[np.ndarray], float] | None = None,
+        ship=None,
     ):
         self.vehicle = vehicle
         # what the flight software believes about the vehicle (= truth unless a Monte
@@ -303,8 +308,12 @@ class RocketSim:
         if self.grid_fins is not None and self.world.fidelity == "high":
             self.grid_fins.enable_mach_effects()
         self.rail: dict | None = None
-        self.has_ground = self.world.ground != "none" or bool(tiles)
+        self.has_ground = self.world.ground != "none" or bool(tiles) or ship is not None
+        self.ship = ship
+        if ship is not None and ground_height is None:
+            ground_height = ship.ground_height
         self._ground_height = ground_height or (lambda p: 0.0)
+        self.gear = LandingGear(vehicle, self.world)
 
         # MuJoCo's Python bindings cannot run a passive callback while compiling a
         # model, so the (process-global) callback is suspended during compilation
@@ -312,7 +321,7 @@ class RocketSim:
         mujoco.set_mjcb_passive(None)
         try:
             self.model = mujoco.MjModel.from_xml_string(
-                build_mjcf(vehicle, self.world, tiles, self.mass_model.dry_inertia)
+                build_mjcf(vehicle, self.world, tiles, self.mass_model.dry_inertia, ship=ship)
             )
             self.data = mujoco.MjData(self.model)
         finally:
@@ -326,12 +335,25 @@ class RocketSim:
             _register_stage_sim(self)
         self.wet_bid = self.model.body("wet").id
         self.dry_z = vehicle.mass.dry_cg_z
+        # xfrc / applyFT point: the hull body's CG (= dry CG unless crush legs carry mass)
+        self.xfrc_z = float(self.model.body_ipos[self.bid][2]) if self.gear.crush else self.dry_z
+        if ship is not None:
+            ship.bind(self.model)
 
         names = [self.model.geom(i).name for i in range(self.model.ngeom)]
         self.ground_geoms = {i for i, n in enumerate(names) if n.startswith("ground")}
         self.foot_geoms = {i for i, n in enumerate(names) if n.startswith("foot")}
         self.leg_geoms = {i for i, n in enumerate(names) if n.startswith("leg")}
         self.body_geoms = {i for i, n in enumerate(names) if n in {"hull", "engine", "nose"}}
+        self.foot_index = {i: int(n[4:]) for i, n in enumerate(names) if n.startswith("foot")}
+        soils = {}
+        for tile in tiles or []:
+            if tile.soil is not None:
+                soils[names.index(f"ground_{tile.name}")] = soil_spec(tile.soil)
+        if ship is not None:
+            soils[names.index("ground_deck")] = soil_spec("steel_deck")
+        self.gear.bind(self.model, self.ground_geoms, soils)
+        self._foot_contacts: dict[int, int] = {}
         legs = vehicle.legs
         self.foot_body = np.array(
             [
@@ -410,6 +432,12 @@ class RocketSim:
         mujoco.mj_resetData(self.model, self.data)
         if self._stage_forces:
             self.data.userdata[0] = self._stage_id  # mj_resetData clears it
+        self.gear.reset()
+        self.gear.init_model(self.model)
+        if self.ship is not None:
+            if seed is not None:
+                self.ship.reset(seed)
+            self.ship.drive(self.data, 0.0)
         q = np.asarray(quat, dtype=float)
         self.data.qpos[:3] = pos
         self.data.qpos[3:7] = q / np.linalg.norm(q)
@@ -518,6 +546,7 @@ class RocketSim:
         cgz = mp.cg_z
         com = pos + R[:, 2] * cgz
         v_com = data.qvel[:3] + R @ _cross_z(omega_b, cgz)
+        self._v_com_start = v_com
 
         # --- quantities held over the step (actuator and environment states)
         f_t, tau_t = _ZERO3, _ZERO3
@@ -574,9 +603,12 @@ class RocketSim:
 
         mujoco.mj_step(self.model, data)
         self._stage_ctx = None
+        self._last_ctx = ctx
         if self.rail is not None:
             self._apply_rail()
         self.t += dt
+        if self.ship is not None:
+            self.ship.drive(data, self.t)
         if self._turb:  # MIL turbulence is a frozen field sampled along the air path
             self.wind.step(
                 dt,
@@ -629,6 +661,10 @@ class RocketSim:
         self._state_cache = None
         if data.ncon or self.legs_down or self.body_contact or not self.airborne:
             self._contacts()
+        if self.gear.crush:
+            self.gear.after_step(self, self._foot_contacts)
+        if self.touchdown is not None:
+            self.gear.track_tipover(self)
 
     # ------------------------------------------------------------------ launch rail
     def set_rail(self, length: float, direction=None) -> None:
@@ -696,7 +732,7 @@ class RocketSim:
             f_chute = -0.5 * atm.density * cda * va * v_air_w
             f_w = f_w + f_chute
         # shift the torque from the total CG to the dry CG (the xfrc / applyFT point)
-        tau_w = R @ (tau_b + _z_cross(cgz - self.dry_z, R.T @ f_w))
+        tau_w = R @ (tau_b + _z_cross(cgz - self.xfrc_z, R.T @ f_w))
         return f_w, tau_w, (f_a, tau_a, q, mach, v_air_w, f_chute, g)
 
     def _stage_callback(self, m, d) -> None:
@@ -713,6 +749,7 @@ class RocketSim:
         feet = set()
         body = False
         data = self.data
+        self._foot_contacts = fc = {}
         for i in range(data.ncon):
             c = data.contact[i]
             g1, g2 = int(c.geom1), int(c.geom2)
@@ -724,6 +761,8 @@ class RocketSim:
                 continue
             if other in self.foot_geoms or other in self.leg_geoms:
                 feet.add(other)
+                if other in self.foot_geoms:
+                    fc[self.foot_index[other]] = g1 if g1 in self.ground_geoms else g2
             elif other in self.body_geoms:
                 body = True
         self.legs_down = len(feet & self.foot_geoms)
@@ -733,9 +772,13 @@ class RocketSim:
             self.airborne = True
         elif self.airborne and self.touchdown is None:
             st = self.state
-            self.touchdown = Touchdown(
-                self.t, -st.vertical_speed, st.horizontal_speed, st.tilt, st.pos.copy()
-            )
+            if self.ship is None:
+                vz, vh = -st.vertical_speed, st.horizontal_speed
+            else:  # impact velocity (start of the contact step) relative to the deck
+                v = getattr(self, "_v_com_start", st.vel_com) - self.ship.point_velocity(st.com)
+                vz = -float(v @ st.up)
+                vh = float(np.linalg.norm(v + vz * st.up))
+            self.touchdown = Touchdown(self.t, vz, vh, st.tilt, st.pos.copy())
 
     # ------------------------------------------------------------------ observers
     def set_legs(self, deployed: bool) -> None:
@@ -770,12 +813,34 @@ class RocketSim:
         """Height of the lowest footpad (or hull base) above the ground."""
         R = self.rot
         pos = self.data.qpos[:3]
-        pts = self.foot_body if len(self.foot_body) else np.zeros((1, 3))
+        if self.gear.crush:
+            pts = self.gear.foot_points(self)
+        else:
+            pts = self.foot_body if len(self.foot_body) else np.zeros((1, 3))
+            pts = [pos + R @ pb for pb in pts]
         best = math.inf
-        for pb in pts:
-            p = pos + R @ pb
+        for p in pts:
             best = min(best, self.gravity.altitude(p) - self._ground_height(p))
         return best
+
+    def forward(self) -> None:
+        """``mj_forward`` at the current state with this step's forces (contact forces for
+        diagnostics, e.g. leg loads); in high fidelity the forces come from the stage
+        callback, which is otherwise inactive outside ``mj_step``."""
+        if self._stage_forces:
+            self._stage_ctx = getattr(self, "_last_ctx", None)
+        mujoco.mj_forward(self.model, self.data)
+        self._stage_ctx = None
+
+    def leg_failure(self) -> str:
+        """'' or the leg failure: rigid legs break above ``max_touchdown_speed``; crush
+        legs fail by bottoming out, overload or a buried pad (``plume.physics.gear``)."""
+        return self.gear.check_touchdown(self.touchdown)
+
+    def clamp_to_deck(self) -> None:
+        """Engage the drone ship's hold-down clamp (weld the vehicle to the deck)."""
+        if self.ship is not None:
+            self.ship.clamp(self.model, self.data, self.bid)
 
     @property
     def state(self) -> State:
@@ -876,6 +941,12 @@ class RocketSim:
             f["fins_out"] = 1.0 if self.grid_fins.deployed else 0.0
         if self.vehicle.legs.count > 0:
             f["legs_out"] = 1.0 if self.legs_deployed else 0.0
+            if self.gear.crush:
+                f["stroke"] = self.gear.stroke.copy()
+                f["sinkage"] = self.gear.sink.copy()
+        if self.ship is not None:
+            f["deck_pos"] = self.ship.pos.copy()
+            f["deck_quat"] = self.ship.quat.copy()
         f_thrust, f_aero, v_air = self.last_forces
         f["v_air"] = v_air
         f["f_thrust"] = f_thrust
@@ -928,6 +999,8 @@ class RocketSim:
                     "span": v.legs.span,
                     "height": v.legs.height,
                     "attach_z": v.legs.attach_z,
+                    "model": self.gear.model_name,
+                    **({"stroke": v.legs.stroke} if self.gear.crush else {}),
                 },
                 "engine": {
                     "nozzle_radius": v.engine.nozzle_radius,
@@ -955,5 +1028,6 @@ class RocketSim:
                 "prop_mass_initial": float(self.tank_init.sum()),
             },
             "scene": scene,
+            **({"ship": self.ship.meta()} if self.ship is not None else {}),
             **extra,
         }

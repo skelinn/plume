@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from plume.config import VehicleSpec, WorldSpec
+from plume.config import SoilSpec, VehicleSpec, WorldSpec
 
 
 @dataclass
@@ -25,6 +25,7 @@ class GroundTile:
     half_x: float
     half_y: float
     quat: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0, 0.0]))
+    soil: SoilSpec | str | None = None  # ground under the footpads (None = world.soil)
 
     def hfield_params(self):
         h = np.asarray(self.heights, dtype=float)
@@ -54,6 +55,7 @@ def build_mjcf(
     world: WorldSpec,
     tiles: list[GroundTile] | None = None,
     dry_inertia=(1.0, 1.0, 1.0),
+    ship=None,
 ) -> str:
     """MJCF for the vehicle.
 
@@ -62,7 +64,28 @@ def build_mjcf(
     it must never move. Everything that changes (propellant, RCS gas, cargo) lives in
     the welded, geom-less child body ``wet`` whose mass/CG/inertia are rewritten
     every step.
+
+    With crushable legs (``plume.physics.gear``, high fidelity) each leg's lower strut and
+    footpad are child bodies on slide joints (stroke, soil sinkage), and the hull body
+    carries the dry mass minus theirs. ``ship`` (``plume.physics.ship.ShipModel``) adds a
+    kinematically driven deck body after the vehicle.
     """
+    from plume.physics.gear import (
+        dry_body_split,
+        legs_mjcf_crush,
+        legs_model,
+        needs_sinkage,
+        soil_spec,
+    )
+
+    crush = legs_model(vehicle.legs, world) == "crush"
+    # crush legs: the ground's friction (soil / deck) governs the pad contact
+    prio = ' priority="1"' if crush else ""
+
+    def ground_friction(soil) -> float:
+        sp = soil_spec(soil if soil is not None else world.soil)
+        return sp.friction if (crush and sp.friction is not None) else world.ground_friction
+
     g = vehicle.geometry
     r = g.radius
     L = g.length
@@ -75,8 +98,8 @@ def build_mjcf(
     ground = []
     if world.ground == "plane" and not tiles:
         ground.append(
-            f'<geom name="ground" type="plane" size="0 0 1" friction="{_f(world.ground_friction)} 0.005 0.0001" '
-            'solref="0.02 1" rgba="0.3 0.3 0.3 1"/>'
+            f'<geom name="ground" type="plane" size="0 0 1" friction="{_f(ground_friction(None))} 0.005 0.0001" '
+            f'solref="0.02 1" rgba="0.3 0.3 0.3 1"{prio}/>'
         )
     for k, tile in enumerate(tiles):
         h_min, elev, norm = tile.hfield_params()
@@ -89,7 +112,8 @@ def build_mjcf(
         pos = np.asarray(tile.origin, dtype=float) + up
         ground.append(
             f'<geom name="ground_{tile.name}" type="hfield" hfield="hf{k}" pos="{_v(*pos)}" '
-            f'quat="{_v(*tile.quat)}" friction="{_f(world.ground_friction)} 0.005 0.0001" solref="0.02 1"/>'
+            f'quat="{_v(*tile.quat)}" friction="{_f(ground_friction(tile.soil))} 0.005 0.0001" '
+            f'solref="0.02 1"{prio}/>'
         )
 
     geoms = [
@@ -103,7 +127,7 @@ def build_mjcf(
             f'<geom name="nose" type="ellipsoid" pos="0 0 {_f(body_top)}" '
             f'size="{_v(r, r, g.nose_length)}" rgba="0.9 0.9 0.92 1"/>'
         )
-    for k, th in enumerate(leg_angles(legs.count)):
+    for k, th in enumerate(leg_angles(legs.count) if not crush else []):
         c, s = math.cos(th), math.sin(th)
         fr = legs.footpad_radius
         foot = (legs.span * c, legs.span * s, -legs.height + fr)
@@ -117,6 +141,15 @@ def build_mjcf(
             'friction="1.0 0.005 0.0001" solref="0.05 2" rgba="0.1 0.1 0.1 1"/>'
         )
 
+    leg_bodies, exclude = [], []
+    if crush:
+        sink = needs_sinkage(world, [t.soil for t in tiles])
+        leg_bodies, exclude = legs_mjcf_crush(vehicle, (_f, _v), sink=sink)
+    m_body, z_body, i_body = vehicle.mass.dry, vehicle.mass.dry_cg_z, tuple(dry_inertia)
+    if crush:
+        m_body, z_body, i_body = dry_body_split(vehicle, dry_inertia)
+    ship_xml, ship_eq = ship.mjcf((_f, _v), crush) if ship is not None else ("", "")
+    contact_xml = f"<contact>{''.join(exclude)}</contact>" if exclude else ""
     asset_xml = f"<asset>{''.join(assets)}</asset>" if assets else ""
     return f"""<mujoco model="plume_{vehicle.name}">
   <compiler angle="radian" autolimits="true"/>
@@ -129,13 +162,16 @@ def build_mjcf(
     {"".join(ground)}
     <body name="rocket" pos="0 0 0">
       <freejoint name="root"/>
-      <inertial pos="0 0 {_f(vehicle.mass.dry_cg_z)}" mass="{_f(vehicle.mass.dry)}" diaginertia="{_v(*dry_inertia)}"/>
+      <inertial pos="0 0 {_f(z_body)}" mass="{_f(m_body)}" diaginertia="{_v(*i_body)}"/>
       {"".join(geoms)}
+      {"".join(leg_bodies)}
       <body name="wet" pos="0 0 0">
         <inertial pos="0 0 {_f(vehicle.mass.dry_cg_z)}" mass="1" diaginertia="1 1 1"/>
       </body>
     </body>
+    {ship_xml}
   </worldbody>
+  {contact_xml}{ship_eq}
 </mujoco>"""
 
 

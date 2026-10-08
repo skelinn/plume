@@ -58,7 +58,42 @@ class LegsSpec(Spec):
     height: float = Field(1.0, ge=0, description="footpad depth below the hull base")
     attach_z: float = Field(1.5, description="leg attachment height on the hull")
     footpad_radius: float = Field(0.15, gt=0)
-    max_touchdown_speed: float = Field(5.0, gt=0, description="legs fail above this speed")
+    max_touchdown_speed: float = Field(
+        5.0, gt=0, description="rigid legs fail above this speed; crush legs are sized for it"
+    )
+    # --- shock absorber (docs/models/landing_gear.md)
+    model: Literal["auto", "rigid", "crush"] = Field(
+        "auto",
+        description="rigid: legs fixed to the hull (fast); crush: stroking shock absorber with a "
+        "crushable core and soil sinkage; auto = crush at high fidelity, rigid at fast",
+    )
+    stroke: float = Field(0.4, gt=0, description="crush: available stroke per leg along the leg, m")
+    crush_force: float | None = Field(
+        None,
+        gt=0,
+        description="crush: plateau crush force per leg, N; None = sized to stop the design "
+        "touchdown speed (max_touchdown_speed) within 75 % of the stroke on all legs",
+    )
+    crush_onset: float = Field(
+        0.3, ge=0, le=1, description="crush: force at zero stroke as a fraction of the plateau"
+    )
+    elastic_stroke: float = Field(
+        0.01, gt=0, description="crush: stroke over which the force rises to the plateau, m"
+    )
+    densification: float = Field(
+        0.8, gt=0, le=1, description="crush: stroke fraction where the core starts to densify"
+    )
+    densified_ratio: float = Field(
+        2.0, ge=1, description="crush: force at full stroke as a multiple of the plateau"
+    )
+    spring_rate: float = Field(0.0, ge=0, description="crush: parallel return spring, N/m")
+    damping: float = Field(1500.0, ge=0, description="crush: parallel viscous damping, N s/m")
+    max_load: float | None = Field(
+        None, gt=0, description="crush: axial leg load limit, N; None = 1.6 x crush force"
+    )
+    foot_mass: float = Field(
+        8.0, gt=0, description="crush: stroking mass per leg (piston + pad), kg"
+    )
 
 
 class MassSpec(Spec):
@@ -392,6 +427,22 @@ class EarthSpec(Spec):
     j2: float | None = Field(None, description="override J2")
 
 
+class SoilSpec(Spec):
+    """Ground under the footpads (docs/models/landing_gear.md). Pressure-sinkage after
+    Bekker, ``p = (k_c / b + k_phi) z^n``, capped by the ultimate bearing strength."""
+
+    name: str = "custom"
+    rigid: bool = Field(False, description="no sinkage (concrete pad, steel deck)")
+    k_c: float = Field(0.0, ge=0, description="Bekker cohesive modulus, N/m^(n+1)")
+    k_phi: float = Field(1.5e6, ge=0, description="Bekker frictional modulus, N/m^(n+2)")
+    n: float = Field(1.0, gt=0, description="Bekker sinkage exponent")
+    bearing_strength: float | None = Field(
+        None, gt=0, description="ultimate bearing pressure (general shear failure), Pa"
+    )
+    friction: float | None = Field(None, ge=0, description="pad/ground friction coefficient")
+    max_sinkage: float = Field(0.6, gt=0, description="pad buried: sinkage limit, m")
+
+
 class WorldSpec(Spec):
     fidelity: Literal["fast", "high"] = Field(
         "fast",
@@ -409,6 +460,9 @@ class WorldSpec(Spec):
     )
     ground: Literal["plane", "none"] = "plane"
     ground_friction: float = Field(0.8, ge=0)
+    soil: SoilSpec | str = Field(
+        "rigid", description="ground under the footpads (crush legs): preset name or SoilSpec"
+    )
     dt: float = Field(0.005, gt=0, le=0.05)
 
     @field_validator("dt")
@@ -458,6 +512,64 @@ def dump_yaml(model: BaseModel, path: str | Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(model.model_dump(mode="json"), sort_keys=False))
     return path
+
+
+# --------------------------------------------------------------------------- drone ship
+class SeaStateSpec(Spec):
+    """Irregular sea (docs/models/ship_landing.md)."""
+
+    hs: float = Field(2.0, ge=0, description="significant wave height, m")
+    tp: float = Field(9.0, gt=0, description="spectral peak period, s")
+    spectrum: Literal["jonswap", "pierson_moskowitz"] = "jonswap"
+    gamma: float = Field(3.3, ge=1, description="JONSWAP peak enhancement factor")
+    direction_deg: float = Field(
+        150.0, description="mean wave heading relative to the bow (180 = head seas, 90 = beam)"
+    )
+    spreading_s: float | None = Field(
+        None, gt=0, description="cos^2s directional spreading; None = long-crested"
+    )
+    directions: int = Field(7, ge=1, description="direction bins when spread")
+    components: int = Field(64, ge=8, le=400, description="frequency components")
+
+
+class DeckLinkSpec(Spec):
+    """Ship-to-vehicle link carrying the deck target state (RTK GNSS on the ship)."""
+
+    rate_hz: float = Field(10.0, gt=0)
+    latency_s: float = Field(0.2, ge=0)
+    sigma_pos: float = Field(0.05, ge=0, description="position noise 1-sigma, m")
+    sigma_vel: float = Field(0.03, ge=0, description="velocity noise 1-sigma, m/s")
+
+
+class ShipSpec(Spec):
+    """Autonomous landing barge ("drone ship"), roughly a 91 x 30 m deck barge with
+    wing extensions to a 52 m wide deck."""
+
+    name: str = "drone_ship"
+    length: float = Field(91.0, gt=0)
+    deck_width: float = Field(52.0, gt=0, description="deck width including wings, m")
+    hull_beam: float = Field(30.0, gt=0, description="waterplane beam, m")
+    draft: float = Field(4.0, gt=0)
+    freeboard: float = Field(3.0, gt=0, description="deck height above the waterline, m")
+    kg: float = Field(5.0, description="vertical CG above the keel, m")
+    roll_gyradius: float = Field(14.0, gt=0, description="roll radius of gyration, m")
+    roll_damping: float = Field(0.1, ge=0, le=1, description="roll damping ratio")
+    mass: float = Field(1.1e7, gt=0, description="displacement, kg")
+    heading_deg: float = Field(0.0, description="bow direction, deg clockwise from north")
+    position: tuple[float, float] = Field((0.0, 0.0), description="mean position (east, north)")
+    target_offset: tuple[float, float] = Field(
+        (0.0, 0.0), description="deck target from deck centre (forward, port), m"
+    )
+    target_radius: float = Field(10.0, gt=0, description="painted landing circle radius, m")
+    deck_friction: float = Field(0.6, ge=0, description="footpad / steel deck friction")
+    station_keeping_sigma: float = Field(1.5, ge=0, description="position wander 1-sigma, m")
+    station_keeping_period: float = Field(120.0, gt=0, description="wander period, s")
+    heading_sigma_deg: float = Field(1.0, ge=0)
+    sea: SeaStateSpec = Field(default_factory=SeaStateSpec)
+    link: DeckLinkSpec = Field(default_factory=DeckLinkSpec)
+    clamp_delay_s: float | None = Field(
+        None, ge=0, description="engage the hold-down clamp this long after touchdown"
+    )
 
 
 # --------------------------------------------------------------------------- landing env
@@ -529,6 +641,10 @@ class LandingEnvSpec(Spec):
     success: SuccessSpec = Field(default_factory=SuccessSpec)
     reward: RewardSpec = Field(default_factory=RewardSpec)
     curriculum: CurriculumSpec
+    ship: ShipSpec | None = Field(None, description="land on a moving drone ship")
+    settle_time_ship: float = Field(
+        10.0, gt=0, description="ship: seconds on the moving deck before success is judged"
+    )
 
 
 def load_landing_env(path_or_name: str | Path = "landing") -> LandingEnvSpec:

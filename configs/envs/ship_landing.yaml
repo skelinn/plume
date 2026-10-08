@@ -1,0 +1,55 @@
+# Powered landing on a drone ship at sea (docs/models/ship_landing.md).
+#   uv run plume land --stage ship_landing                   # fast fidelity, rigid legs
+#   uv run plume land --stage ship_landing --fidelity high   # crushable legs on a steel deck
+vehicle: lander_small
+control_dt: 0.05
+physics_dt: 0.01
+max_time: 150.0
+pad_radius: 10.0          # the painted landing circle on the deck
+settle_time_ship: 10.0    # stay upright on the pitching, rolling deck for 10 s
+world:
+  gravity: flat
+  atmosphere: true
+  ground: none            # open sea; the deck is the only landing surface
+success:
+  max_vertical_speed: 2.0     # relative to the deck
+  max_horizontal_speed: 1.0
+  max_tilt_deg: 10.0
+  settle_time: 1.0
+ship:
+  name: drone_ship
+  length: 91.0
+  deck_width: 52.0
+  hull_beam: 30.0
+  draft: 4.0
+  freeboard: 3.0
+  heading_deg: 0.0
+  target_radius: 10.0
+  station_keeping_sigma: 1.5
+  sea:
+    hs: 2.5                 # moderate sea (sea state 4-5)
+    tp: 9.0
+    spectrum: jonswap
+    gamma: 3.3
+    direction_deg: 150.0    # waves 30 deg off the bow: heave, pitch and some roll
+    spreading_s: 4.0
+    directions: 5
+  link: {rate_hz: 10.0, latency_s: 0.2, sigma_pos: 0.05, sigma_vel: 0.03}
+  clamp_delay_s: null       # hold-down clamp (octagrabber-style) off: friction alone
+curriculum:
+  promote_success: 0.8
+  window: 50
+  min_episodes: 50
+  replay_fraction: 0.0
+  stages:
+    - name: ship_landing     # descent from 0.5-1 km onto the deck in wind
+      altitude: [500, 1000]
+      offset: [0, 40]
+      descent_speed: [30, 60]
+      horizontal_speed: [0, 4]
+      tilt_deg: [0, 6]
+      rate_deg_s: [0, 4]
+      prop_fraction: [0.3, 0.45]
+      wind_speed: [0, 8]
+      gust_max: 3.0
+      turbulence: 0.6

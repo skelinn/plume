@@ -61,8 +61,15 @@ class LandingEnv(gym.Env):
         update = {"dt": cfg.physics_dt}
         if fidelity is not None:  # evaluation at high fidelity (training stays fast)
             update["fidelity"] = fidelity
+        self.ship = self.link = None
+        if cfg.ship is not None:  # drone-ship landing: the pad is a moving deck at sea
+            from plume.physics.ship import DeckLink, ShipModel
+
+            update["ground"] = "none"
+            self.ship = ShipModel(cfg.ship, seed=0)
+            self.link = DeckLink(self.ship, seed=0)
         world = cfg.world.model_copy(update=update)
-        self.sim = RocketSim(self.vehicle, world)
+        self.sim = RocketSim(self.vehicle, world, ship=self.ship)
         self.n_sub = max(1, round(cfg.control_dt / cfg.physics_dt))
         self.stages = cfg.curriculum.stages
         self.stage = int(stage)
@@ -151,8 +158,14 @@ class LandingEnv(gym.Env):
         drift = self._forecast_drift(alt, -vel[2])
         start_h = np.array([off * math.cos(az), off * math.sin(az)]) - drift
         pos = np.array([start_h[0], start_h[1], alt + legs.height])
+        if self.ship is not None:  # relative to the deck target at t = 0
+            self.ship.reset(w_seed)
+            self.link.reset(w_seed + 1)
+            self.pad = self.ship.target()[0]
+            pos = pos + self.pad
         prop = u(st_spec.prop_fraction) * self.vehicle.prop_capacity
         self.sim.reset(pos=pos, vel=vel, quat=q, omega=omega, prop=prop, seed=w_seed)
+        self.clamped = False
 
         self.episode_stage = stage_idx
         self.t_touchdown: float | None = None
@@ -164,23 +177,35 @@ class LandingEnv(gym.Env):
         self.done_reason = ""
         self._phi = self._potential(self.sim.state)
         if self.record:
+            scene = {
+                "frame": "flat",
+                "ground": {"type": "plane"},
+                "pads": [
+                    {
+                        "name": "LZ",
+                        "pos": self.pad.tolist(),
+                        "radius": self.spec_cfg.pad_radius,
+                    }
+                ],
+                "target": {"pos": self.pad.tolist(), "radius": self.spec_cfg.pad_radius},
+            }
+            if self.ship is not None:
+                scene = {
+                    "frame": "flat",
+                    "ground": {"type": "ocean"},
+                    "pads": [],
+                    "target": {
+                        "pos": self.pad.tolist(),
+                        "radius": self.ship.spec.target_radius,
+                        "on_ship": True,
+                    },
+                }
             self.recorder = Recorder(
                 self.sim.replay_meta(
                     f"Landing ({st_spec.name})",
                     controller=options.get("controller", "agent"),
                     seed=seed,
-                    scene={
-                        "frame": "flat",
-                        "ground": {"type": "plane"},
-                        "pads": [
-                            {
-                                "name": "LZ",
-                                "pos": self.pad.tolist(),
-                                "radius": self.spec_cfg.pad_radius,
-                            }
-                        ],
-                        "target": {"pos": self.pad.tolist(), "radius": self.spec_cfg.pad_radius},
-                    },
+                    scene=scene,
                 )
             )
             self.recorder.record(self.sim.frame("descent"))
@@ -307,6 +332,19 @@ class LandingEnv(gym.Env):
         if self.t_touchdown is None and sim.touchdown is not None:
             self.t_touchdown = sim.t
             sim.set_controls(0.0, (0, 0), sim.controls.rcs)
+        ship = self.ship
+        if ship is not None:
+            self.pad = ship.target()[0]  # the landing circle moves with the deck
+            delay = ship.spec.clamp_delay_s
+            if (
+                delay is not None
+                and not self.clamped
+                and self.t_touchdown is not None
+                and sim.t - self.t_touchdown >= delay
+                and not sim.ever_body_contact
+            ):
+                sim.clamp_to_deck()
+                self.clamped = True
 
         phi = self._potential(st)
         reward = phi - self._phi
@@ -322,25 +360,33 @@ class LandingEnv(gym.Env):
         td = sim.touchdown
         sc = cfg.success
         d_pad = float(np.hypot(*(st.pos[:2] - self.pad[:2])))
+        leg_failure = sim.leg_failure() if td is not None else ""
+        settle = cfg.settle_time_ship if ship is not None else sc.settle_time
         if sim.ever_body_contact:
             terminated, self.done_reason = True, "crash_hull"
-        elif td is not None and td.vertical_speed > self.vehicle.legs.max_touchdown_speed:
-            terminated, self.done_reason = True, "crash_legs"
+        elif leg_failure:
+            terminated, self.done_reason = True, leg_failure
         elif st.tilt > math.radians(100):
             terminated, self.done_reason = True, "lost_control"
+        elif ship is not None and st.agl < -0.3 and not ship.on_deck(st.pos):
+            terminated, self.done_reason = True, "splashdown"
         if terminated:
             impact = td.vertical_speed if td else st.speed
             reward -= rw.crash_penalty + rw.crash_speed_penalty * min(
                 max(impact - sc.max_vertical_speed, 0.0), 50.0
             )
-        elif self.t_touchdown is not None and sim.t - self.t_touchdown >= sc.settle_time:
+        elif self.t_touchdown is not None and sim.t - self.t_touchdown >= settle:
             terminated = True
+            speed, tilt = st.speed, st.tilt
+            if ship is not None:  # at rest on the deck = moving with it, upright on it
+                speed = float(np.linalg.norm(st.vel_com - ship.point_velocity(st.com)))
+                tilt = math.acos(min(1.0, float(st.axis @ ship.deck_normal())))
             checks = {
                 "missed": d_pad <= cfg.pad_radius,
                 "hard_vertical": td.vertical_speed <= sc.max_vertical_speed,
                 "hard_horizontal": td.horizontal_speed <= sc.max_horizontal_speed,
-                "tilted": st.tilt <= math.radians(sc.max_tilt_deg),
-                "not_at_rest": st.speed < 0.5 and st.agl < 0.3,
+                "tilted": tilt <= math.radians(sc.max_tilt_deg),
+                "not_at_rest": speed < 0.5 and st.agl < 0.3,
             }
             failed = [k for k, passed in checks.items() if not passed]
             ok = not failed
@@ -383,6 +429,7 @@ class LandingEnv(gym.Env):
                         "touchdown_vh_mps": info["touchdown_vh"] if td else float("nan"),
                         "max_g": sim.max_g,
                         "flight_time_s": sim.t,
+                        **(self.gear_metrics() if td else {}),
                     },
                 )
                 if td is not None:
@@ -393,6 +440,11 @@ class LandingEnv(gym.Env):
         info["success"] = success
         return self._obs(), float(reward), terminated, truncated, info
 
+    def gear_metrics(self) -> dict:
+        """Landing-gear touchdown metrics (stroke, load, energy, sinkage, tip-over margin)."""
+        m = self.sim.gear.report().metrics()
+        return {k: v for k, v in m.items() if isinstance(v, float) and math.isfinite(v)}
+
 
 class AutopilotPolicy:
     """Wraps :class:`LandingAutopilot` as an action-producing policy for a LandingEnv."""
@@ -401,7 +453,12 @@ class AutopilotPolicy:
         from plume.control.autopilot import LandingAutopilot
 
         self.env = env
-        self.ap = LandingAutopilot(env.sim, env.pad, control_dt=env.spec_cfg.control_dt)
+        if env.ship is not None:
+            from plume.control.ship_autopilot import ShipLandingAutopilot
+
+            self.ap = ShipLandingAutopilot(env.sim, env.link, control_dt=env.spec_cfg.control_dt)
+        else:
+            self.ap = LandingAutopilot(env.sim, env.pad, control_dt=env.spec_cfg.control_dt)
 
     def reset(self) -> None:
         self.ap.reset()

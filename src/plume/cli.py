@@ -86,13 +86,25 @@ def land(
     fidelity: Annotated[
         str, typer.Option(help="fast | high (aero database, actuator dynamics)")
     ] = "fast",
+    env_config: Annotated[
+        str | None,
+        typer.Option("--env", help="environment config (configs/envs/<name>.yaml)"),
+    ] = None,
 ):
-    """Fly the landing task with the PID/guidance autopilot or a trained PPO agent."""
+    """Fly the landing task with the PID/guidance autopilot or a trained PPO agent.
+    ``--stage ship_landing`` lands on a drone ship (configs/envs/ship_landing.yaml)."""
     from plume.envs.landing_env import AutopilotPolicy, LandingEnv
     from plume.recording import save_replay
     from plume.rl.evaluate import run_episodes, sb3_policy_factory
 
-    env = LandingEnv(record=True, fixed_stage=True, fidelity=fidelity)
+    spec = env_config
+    if spec is None:  # a stage that is not in the default curriculum may name its own env
+        from plume.config import config_root, load_landing_env
+
+        names0 = [s.name for s in load_landing_env("landing").curriculum.stages]
+        own = config_root() / "envs" / f"{stage}.yaml"
+        spec = stage if (stage not in names0 and not stage.isdigit() and own.exists()) else None
+    env = LandingEnv(spec, record=True, fixed_stage=True, fidelity=fidelity)
     names = [s.name for s in env.stages]
     idx = int(stage) if stage.isdigit() else names.index(stage)
     if controller == "pid":
