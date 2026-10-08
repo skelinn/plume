@@ -127,7 +127,8 @@ class LandingAutopilot:
 
         if self.phase == "coast":
             # ignite a little early to absorb throttle lag and the attitude transient
-            lead = descent * (0.6 + 3 * eng.throttle_tau)
+            ign = eng.ignition_delay_s if sim.engine.high_fidelity else 0.0
+            lead = descent * (0.6 + 3 * eng.throttle_tau + ign)
             wants = descent >= self.v_ref(max(h - lead, 0.0)) or h < 5.0
             if not wants and self.divert_aware and descent > 0:
                 # divert-aware ignition: a hoverslam lasts only a few seconds; when the

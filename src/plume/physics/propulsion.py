@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -47,8 +48,9 @@ class Engine:
     ``d = (cos a sin b, -sin a, cos a cos b)``.
     """
 
-    def __init__(self, spec: EngineSpec, prop_capacity: float):
+    def __init__(self, spec: EngineSpec, prop_capacity: float, high_fidelity: bool = False):
         self.spec = spec
+        self.high_fidelity = high_fidelity
         self._misalign = np.radians(np.asarray(spec.misalignment_deg, dtype=float))
         self.gimbal_max = math.radians(spec.gimbal_max_deg)
         self.gimbal_rate = math.radians(spec.gimbal_rate_deg_s)
@@ -84,6 +86,12 @@ class Engine:
         self.gimbal_cmd = np.zeros(2)
         self.t = 0.0
         self.burn_clock = 0.0
+        # high-fidelity actuator state: piston position/rate, delayed commands, backlash
+        self._act_pos = np.zeros(2)
+        self._act_rate = np.zeros(2)
+        self._cmd_hist: deque[tuple[float, np.ndarray]] = deque()
+        self._act_cmd = np.zeros(2)
+        self._ign_at: float | None = None
 
     @property
     def is_solid(self) -> bool:
@@ -103,6 +111,9 @@ class Engine:
     def _update_gimbal(self, dt: float) -> None:
         if self.gimbal_max <= 0:
             return
+        if self.high_fidelity:
+            self._update_gimbal_actuator(dt)
+            return
         tau = max(self.spec.gimbal_tau, dt)
         rate = np.clip((self.gimbal_cmd - self.gimbal) / tau, -self.gimbal_rate, self.gimbal_rate)
         g = self.gimbal + rate * dt
@@ -116,6 +127,37 @@ class Engine:
         ca = math.cos(a)
         return np.array([ca * math.sin(b), -math.sin(a), ca * math.cos(b)])
 
+    def _update_gimbal_actuator(self, dt: float) -> None:
+        """Second-order actuator (natural frequency, damping, rate and acceleration
+        limits) driven by the command after a transport delay; the nozzle follows the
+        piston through a backlash (free-play) band."""
+        s = self.spec
+        self._cmd_hist.append((self.t, self.gimbal_cmd.copy()))
+        while self._cmd_hist and self._cmd_hist[0][0] <= self.t - s.gimbal_delay_s + 1e-12:
+            self._act_cmd = self._cmd_hist.popleft()[1]  # the newest command old enough
+        cmd = self._act_cmd
+        wn = 2.0 * math.pi * s.gimbal_wn_hz
+        acc = wn * wn * (cmd - self._act_pos) - 2.0 * s.gimbal_zeta * wn * self._act_rate
+        a_max = math.radians(s.gimbal_accel_deg_s2)
+        acc = np.clip(acc, -a_max, a_max)
+        n_sub = max(1, math.ceil(dt * wn / 0.2))  # keep the explicit update stable
+        h = dt / n_sub
+        for _ in range(n_sub):
+            self._act_rate = np.clip(self._act_rate + acc * h, -self.gimbal_rate, self.gimbal_rate)
+            self._act_pos = self._act_pos + self._act_rate * h
+            acc = np.clip(
+                wn * wn * (cmd - self._act_pos) - 2.0 * s.gimbal_zeta * wn * self._act_rate,
+                -a_max,
+                a_max,
+            )
+        n = math.hypot(*self._act_pos)
+        if n > self.gimbal_max:
+            self._act_pos *= self.gimbal_max / n
+            self._act_rate[:] = 0.0
+        half = 0.5 * math.radians(s.gimbal_backlash_deg)
+        diff = self._act_pos - self.gimbal
+        self.gimbal = self.gimbal + np.sign(diff) * np.maximum(np.abs(diff) - half, 0.0)
+
     def update(self, dt: float, ambient_pressure: float, prop_available: float):
         """Advance engine state by dt. Returns (thrust N, mdot kg/s) for this step."""
         self._update_gimbal(dt)
@@ -126,8 +168,19 @@ class Engine:
         s = self.spec
         want_on = self.throttle_cmd >= 0.5 * s.throttle_min and self.throttle_cmd > 1e-6
         if want_on and not self.on and prop_available > 0 and self.can_ignite():
-            self.on = True
-            self.ignitions += 1
+            if self.high_fidelity and s.ignition_delay_s > 0:
+                # igniter, valve sequencing and chamber fill before thrust appears
+                if self._ign_at is None:
+                    self._ign_at = self.t + s.ignition_delay_s
+                if self.t >= self._ign_at:
+                    self.on = True
+                    self.ignitions += 1
+                    self._ign_at = None
+            else:
+                self.on = True
+                self.ignitions += 1
+        if not want_on:
+            self._ign_at = None
         if not want_on or prop_available <= 0:
             self.on = False
         target = min(max(self.throttle_cmd, s.throttle_min), s.throttle_max) if self.on else 0.0
@@ -209,8 +262,11 @@ def ring_layout(spec: RCSSpec, hull_radius: float) -> tuple[np.ndarray, np.ndarr
 class RCS:
     """Reaction control system with continuous (PWM-averaged) duty-cycle allocation."""
 
-    def __init__(self, spec: RCSSpec, vehicle: VehicleSpec, nominal_cg_z: float):
+    def __init__(
+        self, spec: RCSSpec, vehicle: VehicleSpec, nominal_cg_z: float, high_fidelity: bool = False
+    ):
         self.spec = spec
+        self.high_fidelity = high_fidelity
         if spec.thrusters:
             self.pos = np.array([t.pos for t in spec.thrusters], dtype=float)
             d = np.array([t.dir for t in spec.thrusters], dtype=float)
@@ -228,6 +284,8 @@ class RCS:
         self.duty = np.zeros(self.n)
         self.cmd = np.zeros(3)
         self._active = False
+        self._t = 0.0
+        self._frame_start = 0.0
 
     def torque_matrix(self, cg_z: float) -> np.ndarray:
         """3 x n matrix: body torque about the CG per unit duty."""
@@ -262,6 +320,12 @@ class RCS:
         peak = duty.max()
         if peak > 1.0:
             duty /= peak
+        if self.high_fidelity:
+            s = self.spec
+            # pulse-width modulation: on-times shorter than the minimum valve opening
+            # are dropped (minimum impulse bit); longer ones are kept
+            duty = np.where(duty * s.pwm_period_s < s.min_on_time_s, 0.0, duty)
+            self._frame_start = self._t
         self.duty = duty
         self._active = bool(duty.any())
 
@@ -273,13 +337,23 @@ class RCS:
 
     def update(self, cg_z: float, prop_available: float, dt: float):
         """Returns (force_body, torque_body about CG, mdot)."""
+        t0 = self._t
+        self._t += dt
         if not self.enabled or prop_available <= 0 or not self._active:
             return _Z3, _Z3, 0.0
-        force = self.duty @ self._f_unit
+        duty = self.duty
+        if self.high_fidelity:
+            # each valve is open from (frame start + latency) for duty x period: the
+            # fraction of this physics step it is open
+            s = self.spec
+            ph0 = (t0 - self._frame_start) % s.pwm_period_s - s.valve_delay_s
+            on_end = duty * s.pwm_period_s
+            duty = np.clip(np.minimum(on_end, ph0 + dt) - np.maximum(0.0, ph0), 0.0, dt) / dt
+        force = duty @ self._f_unit
         # torque about CG = sum d_i (pos_i x F_i) - (0, 0, cg_z) x force
-        m0 = self.duty @ self._m_unit
+        m0 = duty @ self._m_unit
         torque = np.array([m0[0] + cg_z * force[1], m0[1] - cg_z * force[0], m0[2]])
-        mdot = float(self.duty.sum()) * self.spec.thrust / (self.spec.isp * G0)
+        mdot = float(duty.sum()) * self.spec.thrust / (self.spec.isp * G0)
         if mdot * dt > prop_available:
             scale = prop_available / (mdot * dt)
             force, torque, mdot = force * scale, torque * scale, mdot * scale

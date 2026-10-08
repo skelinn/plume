@@ -279,10 +279,11 @@ class RocketSim:
         self._geodetic = hasattr(self.gravity, "geodetic")
         self._turb = hasattr(self.wind, "turbulence") and hasattr(self.wind, "mean")
         self.mass_model = MassModel(vehicle)
-        self.engine = Engine(vehicle.engine, vehicle.prop_capacity)
+        hifi = self.world.fidelity == "high"
+        self.engine = Engine(vehicle.engine, vehicle.prop_capacity, high_fidelity=hifi)
         self.tank_init = np.array([t.initial_mass for t in vehicle.tanks], dtype=float)
         nominal = self.mass_model.evaluate(self.tank_init, vehicle.rcs.gas)
-        self.rcs = RCS(vehicle.rcs, vehicle, nominal.cg_z)
+        self.rcs = RCS(vehicle.rcs, vehicle, nominal.cg_z, high_fidelity=hifi)
         self.aero = make_aero(vehicle, self.world.fidelity)
         self.legs_deployed = True
         self._aero_by_legs = {True: self.aero}

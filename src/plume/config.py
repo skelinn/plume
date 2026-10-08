@@ -112,6 +112,13 @@ class EngineSpec(Spec):
     misalignment_deg: tuple[float, float] = Field(
         (0.0, 0.0), description="thrust-axis misalignment about body x / y (build tolerance), deg"
     )
+    # high-fidelity actuator and start-up dynamics (fast fidelity uses gimbal_tau)
+    gimbal_wn_hz: float = Field(8.0, gt=0, description="gimbal actuator natural frequency")
+    gimbal_zeta: float = Field(0.7, gt=0, description="gimbal actuator damping ratio")
+    gimbal_accel_deg_s2: float = Field(800.0, gt=0, description="gimbal acceleration limit")
+    gimbal_delay_s: float = Field(0.015, ge=0, description="command transport delay")
+    gimbal_backlash_deg: float = Field(0.05, ge=0, description="total free play")
+    ignition_delay_s: float = Field(0.35, ge=0, description="liquid: command to thrust onset")
     nozzle_radius: float = Field(0.3, gt=0)
     # solid motors
     thrust_curve: Table | None = Field(None, description="[[t, F], ...] for solid motors")
@@ -143,6 +150,10 @@ class RCSSpec(Spec):
     thrust: float = Field(200.0, ge=0, description="per thruster, N")
     isp: float = Field(70.0, gt=0)
     propellant: float = Field(20.0, ge=0, description="cold-gas load, kg")
+    # high fidelity: valves are pulse-width modulated (fast fidelity averages the duty)
+    pwm_period_s: float = Field(0.05, gt=0, description="PWM frame (= flight-software cycle)")
+    min_on_time_s: float = Field(0.01, ge=0, description="minimum valve open time (impulse bit)")
+    valve_delay_s: float = Field(0.005, ge=0, description="valve opening latency")
     z: float = Field(8.0, description="pod ring height (layout=ring)")
     radius: float | None = Field(None, description="pod ring radius; defaults to hull radius")
     pods: int = Field(4, ge=2)
