@@ -107,7 +107,7 @@ def export_site(
 <style>:root{{--bg:#fff;--fg:#0a0a0a;--mute:#666}}@media (prefers-color-scheme:dark){{:root{{--bg:#0a0a0a;--fg:#f2f2f2;--mute:#8a8a8a}}}}
 body{{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 "IBM Plex Sans",system-ui,sans-serif}}
 main{{max-width:720px;margin:0 auto;padding:40px 16px}}a{{color:inherit}}h1{{font-size:20px;font-weight:600}}
-p{{color:var(--mute)}}</style></head><body><main><h1>Plume reports</h1>
+p{{color:var(--mute)}}</style></head><body><main><h1><img src="../static/img/mark.png" alt="" height="28" style="vertical-align:-5px;margin-right:10px">Plume reports</h1>
 <p>Verification results and Monte Carlo dependability campaigns. <a href="../">Open the 3-D viewer</a> ·
 <a href="https://github.com/skelinn/plume">Source on GitHub</a></p><ul>{items}</ul></main></body></html>""",
         encoding="utf-8",

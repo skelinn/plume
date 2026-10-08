@@ -40,18 +40,17 @@ function patchTexture() {
   g.beginPath(); g.arc(128, 128, 120, 0, Math.PI * 2); g.fill();
   g.strokeStyle = '#e8e8e4'; g.lineWidth = 6;
   g.beginPath(); g.arc(128, 128, 104, 0, Math.PI * 2); g.stroke();
-  // stylised trajectory arc + landing tick
-  g.lineWidth = 8;
-  g.beginPath(); g.moveTo(58, 176); g.quadraticCurveTo(128, 20, 198, 176); g.stroke();
-  g.fillStyle = '#e8e8e4';
-  g.fillRect(186, 182, 24, 7);
-  g.fillRect(46, 182, 24, 7);
-  g.font = '600 34px "IBM Plex Mono", Consolas, monospace';
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText('01', 128, 146);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
+  // company mark (Plume Rocketry cubes), drawn once the image has loaded
+  const img = new Image();
+  img.onload = () => {
+    const h = 132, w = (h * img.width) / img.height;
+    g.drawImage(img, 128 - w / 2, 128 - h / 2, w, h);
+    t.needsUpdate = true;
+  };
+  img.src = new URL('../../img/mark.png', import.meta.url).href;
   return t;
 }
 

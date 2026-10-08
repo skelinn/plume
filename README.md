@@ -1,4 +1,4 @@
-<h1 align="center">Plume</h1>
+<p align="center"><img src="docs/assets/logo.png" width="440" alt="plume rocketry"></p>
 
 <p align="center">
   <b>An open-source 6-DOF simulator for reusable cargo rockets, built to be checked</b><br>

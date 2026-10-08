@@ -101,7 +101,8 @@ select option { background: var(--s1); color: var(--t1); }
   min-width: 0;
   z-index: 5;
 }
-.wordmark { font: 600 13px/16px var(--sans); letter-spacing: 0.18em; color: var(--t1); padding-right: 16px; border-right: 1px solid var(--rule); }
+.wordmark { display: flex; align-items: center; gap: 8px; font: 600 16px/16px var(--sans); letter-spacing: 0.01em; color: var(--t1); padding-right: 16px; border-right: 1px solid var(--rule); }
+.wordmark .mark { display: block; width: 14px; height: 20px; }
 .tb-group { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .field { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .field select { min-width: 0; }
@@ -315,7 +316,7 @@ body.capture *, body.capture *::before, body.capture *::after { animation: none 
   .show-md { display: inline-block; }
   .hide-sm { display: none !important; }
   #topbar { padding: 0 8px; }
-  .wordmark { padding-right: 8px; letter-spacing: 0.12em; }
+  .wordmark { padding-right: 8px; }
   .field .lbl { display: none; }
   select { max-width: 180px; }
   #viewports.compare { flex-direction: column; }
