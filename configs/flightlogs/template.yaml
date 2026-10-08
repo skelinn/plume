@@ -1,0 +1,34 @@
+# TEMPLATE column mapping for a flight-computer CSV export.
+#
+# Plume does not ship mappings for specific commercial flight computers: their CSV
+# layouts differ between models and firmware versions, and a wrong unit silently
+# corrupts a calibration. Instead:
+#
+#   1. uv run plume flightlog inspect my_flight.csv
+#      -> prints every column with its range and writes a DRAFT mapping
+#         (runs/flightlogs/my_flight_draft.yaml) with guessed roles and units;
+#   2. check every line of the draft against the flight computer's manual;
+#   3. save it as configs/flightlogs/<your_logger>.yaml and use --mapping <your_logger>.
+#
+# Required: time and altitude. Optional: acceleration, gyro, gps.
+# Units (case-insensitive): time s | ms | us; length m | ft | km;
+# acceleration m/s2 | g | ft/s2; angular rate deg/s | rad/s.
+# Each column also takes `scale` and `offset` (value_si = (raw * scale + offset) * unit).
+name: template
+delimiter: ","          # "," ";" or "\t"
+comment: "#"            # lines starting with this are skipped
+skip_rows: 0            # banner lines before the header that are NOT commented
+time:         {column: time, unit: ms}
+altitude:     {column: altitude, unit: m}          # barometric, any datum (zeroed on the pad)
+acceleration:                                       # the AXIAL accelerometer (along the airframe)
+  column: accel_axial
+  unit: g
+  includes_gravity: true    # true: reads +1 g standing on the pad; false: reads ~0
+  # scale: -1.0             # if the axis points toward the tail (reads -1 g on the pad)
+gyro:         {columns: [gyro_x, gyro_y, gyro_z], unit: deg/s}
+gps:          {lat: lat, lon: lon, alt: gps_alt, alt_unit: m}
+launch_detect:
+  accel_threshold_g: 2.5    # sustained axial load that marks liftoff
+  altitude_threshold: 15.0  # fallback without an accelerometer, m
+  pad_window: 1.0           # seconds before liftoff used to zero the baro
+resample_hz: 50

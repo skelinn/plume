@@ -6,7 +6,8 @@ Monte Carlo summaries (``runs/mc/*/summary.json``), and writes one self-containe
 monochrome HTML page (default ``docs/vv/report.html``).
 
 Validation (agreement with real flight or test data) is reported as *pending* for every
-model: no real data exists yet, and this report never claims otherwise.
+model unless a validation record from a real flight (``docs/validation/*/record.json``,
+written by ``plume validate``) says otherwise; synthetic rehearsals never count.
 """
 
 from __future__ import annotations
@@ -476,7 +477,15 @@ def render_html(
     out_dir: Path,
     root: Path,
     ran: bool,
+    validation: list[dict] | None = None,
 ) -> str:
+    from plume.flightdata.validation import MODEL_DOCS, status_by_doc
+
+    validation = validation or []
+    vstatus = status_by_doc(validation)
+    n_validated = sum(
+        1 for m in models if any(r["verdict"] == "validated" for r in vstatus.get(m.path.stem, []))
+    )
     counts = area_counts(tests)
     n_pass = sum(t.outcome == "passed" for t in tests)
     n_fail = sum(t.outcome in ("failed", "error") for t in tests)
@@ -497,7 +506,7 @@ def render_html(
             (str(n_fail), "tests failed"),
             (str(n_skip), "tests skipped"),
             (nasa_kpi, "NASA cases passed"),
-            (f"0 / {len(models)}", "models validated"),
+            (f"{n_validated} / {len(models)}", "models validated"),
         )
     )
 
@@ -517,12 +526,23 @@ def render_html(
         )
 
     # --- models
+    def vcell(m: ModelDoc) -> str:
+        recs = vstatus.get(m.path.stem, [])
+        if not recs:
+            return '<td data-l="validation" class="pend">Validation: pending real data</td>'
+        parts = [
+            f'<a href="{E(_rel(Path(r["md"]), out_dir))}">{E(r["flight_id"])}</a>: '
+            f"{E(r['verdict'])}" + (f" ({E(r['envelope'])})" if r["verdict"] == "validated" else "")
+            for r in recs
+        ]
+        return f'<td data-l="validation">{"<br>".join(parts)}; elsewhere pending</td>'
+
     model_rows = "".join(
         f'<tr><td data-l="model"><a href="{E(_rel(m.path, out_dir))}">{E(m.title)}</a></td>'
         f"<td data-l=code>{_md_inline(m.code) or '<span class=pend>not stated</span>'}</td>"
         f"<td data-l=verification>{_md_inline(m.status) or '<span class=pend>not stated</span>'}</td>"
         f"{_count_cell(_merge_counts(counts, m.areas))}"
-        '<td data-l="validation" class="pend">Validation: pending real data</td></tr>'
+        f"{vcell(m)}</tr>"
         for m in models
     )
     models_html = (
@@ -618,6 +638,36 @@ def render_html(
                 "</details>"
             )
 
+    # --- validation records
+    blind_txt = {True: "yes", False: "no", None: "unknown"}
+    if validation:
+        vrows = "".join(
+            f'<tr><td data-l=flight><a href="{E(_rel(Path(r["_md"]), out_dir))}">'
+            f"{E(r['flight_id'])}</a></td><td data-l=date>{E(r.get('flight_date') or '-')}</td>"
+            f"<td data-l=data>{'synthetic rehearsal' if r.get('synthetic') else 'real flight'}</td>"
+            f"<td data-l=blind>{blind_txt[r['prediction']['blind']]}</td>"
+            "<td data-l=verdicts>"
+            + ", ".join(
+                f"{E(MODEL_DOCS.get(k, ('', k))[1])}: {E(v)}" for k, v in r["verdicts"].items()
+            )
+            + "</td></tr>"
+            for r in validation
+        )
+        validation_html = (
+            "<table class=stack><tr><th>flight</th><th>date</th><th>data</th><th>blind</th>"
+            f"<th>verdicts</th></tr>{vrows}</table>"
+            '<p class="note">Records written by <code>plume validate</code> in '
+            "<code>docs/validation/</code>. A model is <b>validated</b> only by a real flight "
+            "whose prediction was recorded before it, with every criterion met, and only "
+            "within the stated envelope. Synthetic rehearsals never change a model's status.</p>"
+        )
+    else:
+        validation_html = (
+            '<p class="note">No flight data yet. The workflow: <code>plume predict</code> '
+            "before the flight, <code>plume validate</code> after it "
+            "(docs/test_flight_programme.md).</p>"
+        )
+
     # --- Monte Carlo
     if mc:
         mrows = []
@@ -683,9 +733,10 @@ MuJoCo {E(env["mujoco"])} · pytest {E(env["pytest"])} · {E(env["platform"])}</
 <div><dt>Verification</dt><dd>The math is implemented correctly: the code reproduces analytic
 solutions, NASA reference trajectories, published tables and the expected convergence with
 time step. Everything on this page is verification.</dd></div>
-<div><dt>Validation</dt><dd>The models match reality. This needs real flight or test data,
-which does not exist yet, so validation is <b>pending</b> for every model. Nothing here
-claims that the simulator predicts real flights.</dd></div>
+<div><dt>Validation</dt><dd>The models match reality. This needs real flight or test data.
+A model counts as validated only where a real flight, predicted beforehand, agreed with it
+(see Validation records); everywhere else validation is <b>pending</b>. Nothing here claims
+more than that.</dd></div>
 <div><dt>Monte Carlo</dt><dd>Quantified dependability under stated uncertainties: the
 probability of success and the landing dispersion when vehicle and environment parameters
 are dispersed as specified. It is only as good as the models and the dispersions.</dd></div>
@@ -696,6 +747,9 @@ are dispersed as specified. It is only as good as the models and the dispersions
 <p class="note">Status text is quoted from each page's <b>Verification status</b> line. The
 tests column counts the test areas mapped to that model (Earth: Earth &amp; gravity,
 integration, NASA check cases).</p>
+
+<h2>Validation records</h2>
+{validation_html}
 
 <h2>Tests by area</h2>
 {areas_html}
@@ -743,6 +797,9 @@ def build_report(
     nasa_res = run_nasa(nasa_workers, log) if nasa else None
     models = read_model_docs(root / "docs" / "models")
     mc = read_mc_reports(root)
+    from plume.flightdata.validation import read_records, status_by_doc
+
+    validation = read_records(root / "docs" / "validation")
     env = environment(root)
     page = render_html(
         env=env,
@@ -755,6 +812,7 @@ def build_report(
         out_dir=out.parent,
         root=root,
         ran=run,
+        validation=validation,
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page, encoding="utf-8")
@@ -769,4 +827,10 @@ def build_report(
         "total": len(tests),
         "nasa": nasa_res,
         "models": len(models),
+        "validation_records": len(validation),
+        "validated": sorted(
+            d
+            for d, rs in status_by_doc(validation).items()
+            if any(r["verdict"] == "validated" for r in rs)
+        ),
     }

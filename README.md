@@ -151,6 +151,17 @@ uv run plume calibrate data/flights/sample_flight.csv --mapping generic_altimete
 
 The bundled logs are synthetic "real" flights. A 6-DOF truth model with different drag, motor and parachute flew them through noisy, biased sensors. Calibration recovers the truth to within 1–3 % and cuts the apogee error from +134 m to −1.4 m.
 
+**First real flights.** [docs/test_flight_programme.md](docs/test_flight_programme.md) is the plan for a hobby rocket, then a tethered hop rig, then free hops. It covers what each flight validates, the instrumentation, the CSV columns Plume needs, checklists and safety notes. The commands:
+
+```bash
+uv run plume flightlog inspect my_flight.csv          # guess columns and units, write a draft mapping
+uv run plume predict hobby_rocket --motor H180 --wind 4 --flight-id flight_1-1   # BEFORE the flight: Monte Carlo bands
+uv run plume validate my_flight.csv --mapping my_logger --prediction docs/predictions/flight_1-1.json \
+    --flight-id flight_1-1 --flight-date 2026-11-14T15:42Z   # validation record read by plume vv-report
+uv run plume sim hop_rig --script tethered_hover      # also: tether_catch, translation_step, free_hop
+uv run plume rig plan                                 # hop-rig tests and the parameters each identifies (docs/hop_rig.md)
+```
+
 ### 5 · Viewer
 
 `uv run plume viz` serves every replay under `runs/` and `data/replays/`.

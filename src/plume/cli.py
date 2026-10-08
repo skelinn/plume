@@ -47,7 +47,13 @@ def sim(
     vehicle: Annotated[
         str, typer.Argument(help="vehicle preset name or YAML path")
     ] = "lander_small",
-    script: Annotated[str, typer.Option(help="scenario: hop_test | drop")] = "hop_test",
+    script: Annotated[
+        str,
+        typer.Option(
+            help="scenario: hop_test | drop | tethered_hover | tether_catch | "
+            "translation_step | free_hop"
+        ),
+    ] = "hop_test",
     out: Annotated[Path | None, typer.Option(help="replay output path")] = None,
     seed: int = 0,
     wind: Annotated[float, typer.Option(help="mean wind speed, m/s")] = 0.0,
@@ -67,6 +73,9 @@ def sim(
     )
     out = out or Path("runs") / f"{script}_{v.name}.plume.json.gz"
     streamer, on_frame = _live(live)
+    if script not in SCENARIOS:
+        console.print(f"[red]unknown scenario {script!r}; choose from {sorted(SCENARIOS)}[/]")
+        raise typer.Exit(2)
     rec = SCENARIOS[script](v, world, seed=seed, on_frame=on_frame)
     if streamer:
         streamer.end(rec.meta.get("outcome"))
@@ -503,7 +512,13 @@ def vv_report(
             if not c["error"] and c["vars"] and all(v["passed"] for v in c["vars"])
         )
         console.print(f"NASA check cases passed: {ok} / {len(res['nasa'])}")
-    console.print("validation against real data: [yellow]pending[/] for every model")
+    if res.get("validated"):
+        console.print(
+            f"validated against real flights (within stated envelopes): "
+            f"[green]{', '.join(res['validated'])}[/]; all other models pending"
+        )
+    else:
+        console.print("validation against real data: [yellow]pending[/] for every model")
     console.print(f"report: [cyan]{res['out']}[/]   junit: [cyan]{res['junit']}[/]")
     if res["failed"]:
         raise typer.Exit(1)
@@ -526,6 +541,12 @@ try:  # real-terrain tools (plume terrain fetch | info | hazard)
     app.add_typer(terrain_app, name="terrain", help="Real-world terrain (Copernicus DEM).")
 except ImportError:  # pragma: no cover
     pass
+
+
+# test-flight programme: plume flightlog | predict | validate | rig
+from plume.cli_flighttest import register as _register_flighttest  # noqa: E402
+
+_register_flighttest(app)
 
 
 if __name__ == "__main__":

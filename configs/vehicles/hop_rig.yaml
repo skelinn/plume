@@ -1,0 +1,66 @@
+# Hop-test rig: a small VTVL test article for tethered hovers and low free hops.
+#
+# REPRESENTATIVE, NOT A REAL DESIGN. The numbers below are typical of a ~200 kg
+# pressure-fed hop rig (think small "grasshopper"-class test article): they let the
+# test-campaign tools, scenarios and system-identification workflow run end to end.
+# Replace every value with weighed, measured and test-stand data before using any
+# prediction for a real test (docs/hop_rig.md, "Calibration path").
+#
+# Body z is measured from the base of the hull (engine end), +z toward the nose.
+name: hop_rig
+description: >-
+  Representative 200 kg VTVL hop rig (4 kN throttleable pressure-fed engine, 30-100 %
+  throttle, 6 deg gimbal, nitrogen cold-gas RCS, four legs) for tethered hovers and
+  50 m hops. Placeholder values: replace with measured data.
+geometry:
+  length: 3.0            # m, hull base to nose tip
+  diameter: 0.6
+  nose_length: 0.4
+legs:
+  count: 4
+  span: 0.9              # footpad radius from the axis
+  height: 0.5            # footpads this far below the hull base
+  attach_z: 0.7
+  footpad_radius: 0.08
+  max_touchdown_speed: 3.0
+mass:
+  dry: 140.0             # kg: structure, engine, tanks, avionics, pressurant bottle
+  dry_cg_z: 1.05
+  dry_inertia: [95.0, 95.0, 9.0]   # kg m^2 about the dry CG (measure: bifilar pendulum)
+tanks:
+  - name: propellant     # fuel + oxidiser lumped (pressure-fed, common bulkhead)
+    capacity: 55.0
+    z_bottom: 0.55
+    z_top: 1.75
+    radius: 0.26
+engine:
+  type: liquid
+  thrust_vac: 4000.0     # N at 100 % (sea-level ~3.6 kN; liftoff T/W ~1.9)
+  isp_vac: 230.0
+  isp_sl: 210.0
+  throttle_min: 0.3
+  throttle_max: 1.0
+  throttle_tau: 0.15     # s, valve + chamber response (identify with throttle doublets)
+  max_ignitions: null
+  gimbal_max_deg: 6.0
+  gimbal_rate_deg_s: 40.0
+  gimbal_tau: 0.04       # s, fast fidelity first-order actuator
+  gimbal_wn_hz: 6.0      # high fidelity second-order actuator (identify with chirps)
+  gimbal_zeta: 0.7
+  gimbal_delay_s: 0.02
+  gimbal_backlash_deg: 0.1
+  ignition_delay_s: 0.5
+  gimbal_z: 0.25         # gimbal pivot height above the hull base
+  nozzle_radius: 0.07
+rcs:
+  enabled: true
+  thrust: 25.0           # N per thruster (nitrogen)
+  isp: 65.0
+  propellant: 3.0        # kg nitrogen
+  z: 2.6
+  pods: 4
+  pwm_period_s: 0.05
+  min_on_time_s: 0.015
+aero:
+  enabled: true
+  stations: 10
