@@ -263,7 +263,7 @@ def test_upper_stage_guidance_reaches_target_orbit(launcher):
     el = frame.elements(st.com, st.vel_com)
     r_eq = frame.r_eq
     assert el.perigee_altitude(r_eq) == pytest.approx(200e3, abs=3e3)
-    assert el.apogee_altitude(r_eq) == pytest.approx(250e3, abs=6e3)
+    assert el.apogee_altitude(r_eq) == pytest.approx(250e3, abs=3e3)
     assert math.degrees(el.i) == pytest.approx(40.0, abs=0.05)
     assert sim.prop_mass > 0.0
 
@@ -301,6 +301,22 @@ def test_multi_vehicle_replay_validates(tmp_path):
     jsonschema.validate(data, json.loads(SCHEMA_PATH.read_text()))
     # single-vehicle replays are unchanged (no tracks key)
     assert "tracks" not in Recorder({"title": "x"}).to_dict()
+
+
+def test_bundled_orbit_demo_replay():
+    """The bundled high-fidelity demo replay: multi-vehicle, schema-valid, orbit + landing."""
+    from plume.config import data_root
+    from plume.recording import load_replay
+
+    data = load_replay(data_root() / "replays" / "orbit_demo_high.plume.json.gz")
+    assert data["meta"]["fidelity"] == "high"
+    assert [v["id"] for v in data["meta"]["vehicles"]][:2] == ["upper", "booster"]
+    assert set(data["tracks"]) == {"booster", "fairing_a", "fairing_b"}
+    m = data["meta"]["outcome"]["metrics"]
+    assert data["meta"]["outcome"]["success"]
+    assert m["orbit.reached"] and m["booster.landed"]
+    jsonschema = pytest.importorskip("jsonschema")
+    jsonschema.validate(data, json.loads(SCHEMA_PATH.read_text()))
 
 
 @pytest.mark.slow

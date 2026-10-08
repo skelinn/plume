@@ -166,7 +166,7 @@ export class EngOverlay {
     this.enabled = false;
     this.scene = new THREE.Scene();
     const r = world.replay;
-    this.has = (k) => r.has(k);
+    this.has = (k) => (world.vrep || r).has(k); // the followed vehicle's columns (multi-vehicle replays)
     this.arrows = {};
     for (const v of VECS) this.arrows[v.k] = new Arrow(this.scene, C[v.k], v.dash);
     this.axes = [C.axX, C.axY, C.axZ].map((c) => new Arrow(this.scene, c, false));

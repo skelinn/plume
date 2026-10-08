@@ -65,7 +65,7 @@ For a target inclination i, the orbit normal n must satisfy n·k = cos i and pas
 
 Vertical rise (6 s), linear pitch kick to the kick angle along the heading (6 s), kick hold until the flight path has pitched over by the kick angle, then a gravity turn that follows the *ground* velocity (a 6 m/s wind turned a 3° kick around when following the air velocity). The kick is **planned**: a 3-DOF point-mass ascent of the nominal stack (calm air, same direction law, same g-limited thrust, stop at the reserve) is bisected on the kick angle until the flight-path angle at MECO equals `staging_flight_path_deg` (35°). The planned flight-path angle vs speed is then tracked in closed loop during the gravity turn (as in the cargo hop; AoA limited to 1.5° above 15 kPa and 4° below). Above 20 km and below 5 kPa a small yaw trim nulls the inertial out-of-plane velocity. Thrust is limited to `max_g` = 5 g sensed. MECO when the booster is down to its reserve (plus the thrust tail-off ṁ τ).
 
-The staging angle trades upper-stage performance against the booster's return: a lofted staging leaves less horizontal speed to cancel. In fast fidelity, 30° / 35° / 40° gave boost-back burns of 2 720 / 2 440 / 2 270 kg with the upper stage's margin almost unchanged (77–90 kg).
+The staging angle trades upper-stage performance against the booster's return: a lofted staging leaves less horizontal speed to cancel. In fast fidelity (before the boost-back g-limit below), 30° / 35° / 40° gave boost-back burns of 2 720 / 2 440 / 2 270 kg with the upper stage's margin almost unchanged (77–90 kg).
 
 ### Upper stage (`UpperStageGuidance`)
 
@@ -77,7 +77,7 @@ Closed-loop terminal guidance in the ECI frame, re-solved every 50 ms. With r̂,
 * **downrange:** the rest of the thrust, a_t = √(a_T² − a_r² − a_n²); a_r, a_n are limited to `max_off_tangent_deg` (60°) of the thrust.
 * **time to go:** from the rocket equation, t_go = τ_m (1 − e^(−Δv/v_e)), τ_m = m v_e / T, iterated with Δv = |(v_T − v_t, −ṙ + ½ (g_eff + g_eff,T) t_go, −v_n)| (the radial term carries the gravity loss still to be paid).
 * **freeze:** below `freeze_time` (6 s) to go, A, B are held and only advanced in time (the solution is singular as t_go → 0).
-* **cutoff:** when the specific orbital energy reaches the target's, ε_T = −μ / (2 a_T), less the energy the thrust tail-off still adds (|v| (T/m) τ) and with half a control cycle of lead. In the last ~3 s of full-thrust energy gain the engine is throttled to its minimum so the cutoff lands within a fraction of a m/s.
+* **cutoff:** when the specific orbital energy reaches the target's, ε_T = −μ / (2 a_T), less the energy the thrust tail-off still adds (|v| (T/m) τ) and with half a control cycle of lead. The tail-off is the sampled engine lag's shutdown impulse (dt a/(1 − a), a = e^(−dt/τ), less the 2 % cut), and dε/dt uses the actual thrust direction (v·a_T), which near burnout is well off the velocity. In the last ~3 s of full-thrust energy gain the throttle is set between minimum and full so the remaining energy takes a whole number of 50 ms cycles: the cut then falls on a cycle boundary. Without that, the half-cycle quantisation alone was ±1 m/s, ±3.5 km of apogee; with it the demo's apogee is within 1 km.
 
 The target state is the perigee of the target orbit: r_T = R_eq + h_p, v_T = √(μ (2/r_T − 1/a_T)), flight-path angle 0. This is a simplified linear-acceleration ("linear tangent family", PEG-like) law: robust and simple, not propellant-optimal, and it does not model J2 in its prediction (the closed loop absorbs it).
 
@@ -114,15 +114,18 @@ Old single-vehicle replays have none of these and load unchanged; old viewers sh
 <!-- ORBIT:START -->
 | | fast fidelity | high fidelity |
 |---|---:|---:|
-| staging | T+120 s, 53.6 km, 1 740 m/s, 35° | T+120 s, 53.6 km, 1 743 m/s, 35° |
-| max q (stack) | 32.0 kPa | 32.6 kPa |
-| orbit (target 200 × 250 km, 40°) | 199.7 × 246.8 km, 40.00° | 199.5 × 246.7 km, 39.98° |
+| staging | T+120 s, 53.6 km, 1 740 m/s, 35° | T+120 s, 53.6 km, 1 743 m/s, 34° |
+| max q (stack) | 31.9 kPa | 32.6 kPa |
+| orbit (target 200 × 250 km, 40°) | 199.8 × 250.1 km, 40.00° | 199.6 × 249.4 km, 39.98° |
 | upper-stage propellant at SECO | 79 kg (2.5 %) | 102 kg (3.2 %) |
-| booster boost-back propellant | 2 443 kg | 2 461 kg |
-| booster landing error on LZ-1 | 4.3 m | 2.0 m |
-| booster touchdown | 1.2 m/s | 1.1 m/s |
-| booster propellant at touchdown | 307 kg | 299 kg |
+| booster boost-back propellant | 2 553 kg | 2 581 kg |
+| booster apogee after boost-back | 117 km | 117 km |
+| booster landing error on LZ-1 | 2.8 m | 3.2 m |
+| booster touchdown | 0.96 m/s down, 0.42 m/s across | 0.71 m/s down, 0.12 m/s across |
+| booster propellant at touchdown | 226 kg | 183 kg |
 <!-- ORBIT:END -->
+
+The high-fidelity elements are osculating (J2) and the bundled replay `data/replays/orbit_demo_high.plume.json.gz` is this run. Fast fidelity has no Earth rotation, which is why it needs more of the upper stage's propellant.
 
 Single runs at the nominal conditions with light wind; no Monte Carlo campaign has been flown for the launcher yet, so these are not success probabilities.
 

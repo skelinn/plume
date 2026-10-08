@@ -163,10 +163,10 @@ A representative 23 t two-stage launcher (Electron / Falcon 1 class; a generic m
 
 | | fast | high fidelity |
 |---|---:|---:|
-| orbit (target 200 × 250 km, 40°) | 199.7 × 246.8 km, 40.00° | 199.5 × 246.7 km, 39.98° |
+| orbit (target 200 × 250 km, 40°) | 199.8 × 250.1 km, 40.00° | 199.6 × 249.4 km, 39.98° |
 | upper-stage propellant left | 79 kg (2.5 %) | 102 kg (3.2 %) |
-| booster landing error / touchdown | 4.3 m / 1.2 m/s | 2.0 m / 1.1 m/s |
-| booster propellant left | 307 kg | 299 kg |
+| booster landing error / touchdown | 2.8 m / 0.96 m/s | 3.2 m / 0.71 m/s |
+| booster propellant left | 226 kg | 183 kg |
 
 These are single nominal runs, not a Monte Carlo campaign. Replays hold every vehicle (`meta.vehicles` + `tracks`); in the viewer, **Follow** (or `V`) switches the camera and telemetry between the upper stage and the booster. The models, guidance laws and verification are in [docs/models/staging_and_orbit.md](docs/models/staging_and_orbit.md).
 

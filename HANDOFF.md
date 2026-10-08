@@ -79,7 +79,7 @@ _Last updated: 2026-10-08 (evening)_
 | 3 | Ascent load relief + re-targeting | starting | same agent as 2 |
 | 4 | Test-flight programme | starting | worktree agent |
 | 5 | Hop-test-rig model | starting | same agent as 4 |
-| 6 | Multi-stage + orbit | starting | worktree agent |
+| 6 | Multi-stage + orbit | done on branch (PR pending) | `worktree-agent-aae8905162257be45`: `plume launch demo_orbit`, docs/models/staging_and_orbit.md; next: Monte Carlo of the launcher, per-vehicle EKF, third stage |
 | 7 | Ship landing | starting | worktree agent |
 | 8 | Landing gear + soil | starting | same agent as 7 |
 | 9 | Mission planner | starting | worktree agent |

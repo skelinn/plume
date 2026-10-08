@@ -358,6 +358,19 @@ class UpperStageGuidance:
         d_i = (a_r * rh + a_n * n + a_h * th) / a_t
         return _unit(self.frame.to_world_direction(d_i, t))
 
+    def _tail_time(self) -> float:
+        """Shutdown impulse / thrust at cutoff (s): the engine's throttle decays as a sampled
+        first-order lag (factor a = exp(-dt/tau) per step, applied before the step's thrust)
+        and is cut below 2 %, so the impulse is dt a / (1 - a) less the cut-off remainder,
+        slightly under the continuous-time tau (the shutdown impulse a real flight
+        software would take from engine test data)."""
+        tau = self.sim.nominal.engine.throttle_tau
+        if tau <= 0:
+            return 0.0
+        dt = self.sim.dt
+        a = math.exp(-dt / tau)
+        return dt * a / (1.0 - a) - 0.02 * tau
+
     def energy(self, st) -> float:
         r, v = self.frame.to_inertial(st.com, st.vel_com, self.sim.t)
         return 0.5 * float(v @ v) - self.mu / float(np.linalg.norm(r))
@@ -385,7 +398,7 @@ class UpperStageGuidance:
         # plane corrections), so |v| |a| would overstate the tail-off and cut early
         d_i = self.frame.world_to_eci_matrix(t) @ st.axis
         e_rate = max(float(v @ d_i), 0.0) * sim.thrust / st.mass
-        tail = e_rate * sim.nominal.engine.throttle_tau
+        tail = e_rate * self._tail_time()
         remaining = self.E_T - tail - self.energy(st)
         if remaining <= 0.5 * e_rate * self.control_dt:
             self.phase = "coast"
@@ -397,10 +410,15 @@ class UpperStageGuidance:
             self.cutoff_t = t
             self._event("cutoff", "Upper stage depleted")
             return 0.0, np.zeros(2), np.zeros(3), "coast"
-        # last seconds: throttle down so the cutoff lands closer to the target energy
-        e_full = float(np.linalg.norm(v)) * sim.engine.max_thrust(0.0) / st.mass
-        if remaining < e_full * self.trim_time:
-            self.throttle = sim.nominal.engine.throttle_min
+        # last seconds: throttle down, and pick the throttle (minimum .. full) so that the
+        # remaining energy takes a whole number of flight-software cycles: the cutoff then
+        # falls on a cycle boundary instead of up to half a cycle early or late
+        e_unit = max(float(v @ d_i), 1e-3) * sim.engine.max_thrust(0.0) / st.mass
+        if remaining < e_unit * self.trim_time:
+            u_min = sim.nominal.engine.throttle_min
+            n = remaining / (u_min * e_unit * self.control_dt)  # cycles at minimum throttle
+            k = max(math.floor(n), 1)
+            self.throttle = float(np.clip(u_min * n / k, u_min, 1.0))
         gimbal, rcs = self.att(st, axis, sim.thrust)
         return self.throttle, gimbal, rcs, "upper_burn"
 

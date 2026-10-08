@@ -78,7 +78,7 @@
           "type": "object",
           "required": ["frame", "ground"],
           "properties": {
-            "frame": { "enum": ["flat", "spherical"] },
+            "frame": { "enum": ["flat", "spherical", "wgs84"], "description": "wgs84: high-fidelity ENU frame on the WGS-84 ellipsoid (with origin and map_grid)" },
             "earth_radius": { "type": ["number", "null"] },
             "ground": {
               "type": "object",
