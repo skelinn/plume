@@ -650,6 +650,9 @@ def run_mission(
     sim.reset(
         pos=mw.pad_a + up * (vehicle.legs.height - 0.005), quat=quat_from_z_axis(up), seed=seed
     )
+    from plume.control.navigation import Navigator, navigation_mode
+
+    nav = Navigator(sim, seed=seed) if navigation_mode(world) == "ekf" else None
     ap = HopAutopilot(sim, mw, spec.guidance, kick_deg, rise)
     rec = Recorder(
         sim.replay_meta(
@@ -673,12 +676,15 @@ def run_mission(
     landed_t = None
     max_alt = 0.0
     while sim.t < spec.max_time:
-        st = sim.state
+        # the flight software acts on the navigation estimate (truth in fast mode)
+        st = nav.estimate() if nav is not None else sim.state
         throttle, gimbal, rcs, phase = ap.act(st)
         if landed_t is not None:
             throttle = 0.0
         sim.set_controls(throttle, gimbal, rcs)
         sim.step(steps)
+        if nav is not None:
+            nav.update(steps * sim.dt)
         st = sim.state
         max_alt = max(max_alt, st.altitude)
         k += 1
@@ -717,7 +723,11 @@ def run_mission(
     if sim.touchdown is not None and sim.t > 30:
         rec.event(sim.touchdown.t, "touchdown", "Touchdown")
     result = score_mission(sim, mw, spec, failure, max_alt, prop_initial=float(sim.tank_init.sum()))
-    rec.set_outcome(result.success, result.reason, asdict(result) | {"kick_deg": kick_deg})
+    extra = {"kick_deg": kick_deg}
+    if nav is not None:
+        rec.meta["navigation"] = {"mode": "ekf", **nav.summary()}
+        extra["nav_pos_err_max_m"] = nav.summary().get("pos_err_max_m")
+    rec.set_outcome(result.success, result.reason, asdict(result) | extra)
     rec.meta["outcome"]["metrics"].pop("success", None)
     rec.meta["outcome"]["metrics"].pop("reason", None)
     return HopRun(result, rec, kick_deg, rise)

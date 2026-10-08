@@ -45,6 +45,13 @@ def quat_to_mat(q) -> np.ndarray:
     )
 
 
+def mat_to_quat(R: np.ndarray) -> np.ndarray:
+    """Rotation matrix -> unit quaternion [w, x, y, z]."""
+    q = np.zeros(4)
+    mujoco.mju_mat2Quat(q, np.ascontiguousarray(R, dtype=float).reshape(9))
+    return q
+
+
 def quat_from_axis_angle(axis, angle: float) -> np.ndarray:
     axis = np.asarray(axis, dtype=float)
     axis = axis / np.linalg.norm(axis)

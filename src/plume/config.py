@@ -242,6 +242,55 @@ class RecoverySpec(Spec):
     chutes: list[ChuteSpec] = Field(default_factory=list)
 
 
+class ImuSpec(Spec):
+    """Inertial measurement unit (defaults: tactical-grade, HG1700-class)."""
+
+    rate_hz: float = Field(200.0, gt=0)
+    gyro_arw_deg_rt_h: float = Field(0.125, ge=0, description="angle random walk, deg/sqrt(h)")
+    gyro_bias_deg_h: float = Field(3.0, ge=0, description="turn-on bias 1-sigma, deg/h")
+    gyro_bias_instability_deg_h: float = Field(1.0, ge=0)
+    accel_vrw_m_s_rt_h: float = Field(0.06, ge=0, description="velocity random walk, m/s/sqrt(h)")
+    accel_bias_mg: float = Field(1.0, ge=0, description="turn-on bias 1-sigma, milli-g")
+    accel_bias_instability_mg: float = Field(0.05, ge=0)
+    bias_correlation_s: float = Field(600.0, gt=0)
+    scale_factor_ppm: float = Field(300.0, ge=0)
+    misalignment_mrad: float = Field(0.5, ge=0)
+    gyro_quantum_rad: float = Field(1e-7, ge=0, description="delta-angle LSB")
+    accel_quantum_m_s: float = Field(1e-5, ge=0, description="delta-velocity LSB")
+    gyro_range_deg_s: float = Field(1000.0, gt=0)
+    accel_range_g: float = Field(40.0, gt=0)
+
+
+class GnssSpec(Spec):
+    rate_hz: float = Field(10.0, gt=0)
+    latency_s: float = Field(0.05, ge=0)
+    sigma_h_m: float = Field(1.5, ge=0, description="horizontal position 1-sigma")
+    sigma_v_m: float = Field(3.0, ge=0, description="vertical position 1-sigma")
+    sigma_vel_m_s: float = Field(0.05, ge=0)
+    bias_correlation_s: float = Field(300.0, gt=0)
+    max_altitude_m: float | None = Field(None, description="outage above this altitude (None = never)")
+
+
+class BaroSpec(Spec):
+    sigma_m: float = Field(1.0, ge=0)
+    bias_m: float = Field(5.0, ge=0, description="1-sigma calibration bias")
+    min_pressure_pa: float = Field(1000.0, ge=0, description="no reading below this pressure")
+
+
+class RadarAltimeterSpec(Spec):
+    max_range_m: float = Field(2500.0, gt=0)
+    sigma_m: float = Field(0.1, ge=0)
+    sigma_frac: float = Field(0.005, ge=0, description="noise proportional to range")
+    max_tilt_deg: float = Field(30.0, gt=0)
+
+
+class SensorsSpec(Spec):
+    imu: ImuSpec = Field(default_factory=ImuSpec)
+    gnss: GnssSpec = Field(default_factory=GnssSpec)
+    baro: BaroSpec = Field(default_factory=BaroSpec)
+    radar: RadarAltimeterSpec | None = Field(default_factory=RadarAltimeterSpec)
+
+
 class VehicleSpec(Spec):
     name: str
     description: str = ""
@@ -255,6 +304,7 @@ class VehicleSpec(Spec):
     aero: AeroSpec = Field(default_factory=AeroSpec)
     recovery: RecoverySpec = Field(default_factory=RecoverySpec)
     grid_fins: GridFinSpec | None = None
+    sensors: SensorsSpec = Field(default_factory=SensorsSpec)
 
     @model_validator(mode="after")
     def _check(self):
@@ -335,6 +385,9 @@ class WorldSpec(Spec):
     temperature_offset: float = 0.0
     atmosphere_model: AtmosphereModelSpec = Field(default_factory=AtmosphereModelSpec)
     wind: WindSpec = Field(default_factory=WindSpec)
+    navigation: Literal["auto", "truth", "ekf"] = Field(
+        "auto", description="state the flight software sees: auto = EKF in high fidelity"
+    )
     ground: Literal["plane", "none"] = "plane"
     ground_friction: float = Field(0.8, ge=0)
     dt: float = Field(0.005, gt=0, le=0.05)
