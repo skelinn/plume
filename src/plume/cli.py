@@ -537,5 +537,11 @@ except ImportError:  # pragma: no cover
     pass
 
 
+# test-flight programme: plume flightlog | predict | validate | rig
+from plume.cli_flighttest import register as _register_flighttest  # noqa: E402
+
+_register_flighttest(app)
+
+
 if __name__ == "__main__":
     app()
