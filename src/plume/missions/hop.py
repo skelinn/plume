@@ -232,6 +232,8 @@ class HopAutopilot:
         self.downrange0 = horiz / np.linalg.norm(horiz)
         self._last_pred_t = -1e9
         self._drag_prev = None  # (t, velocity) for in-flight drag estimation
+        self.landing.max_divert_m = guidance.max_divert_m
+        self.landing.divert_gate = guidance.divert_gate
         self._pred_hist: list[tuple[float, float]] = []  # (t, along-track error)
         self._meco_at: float | None = None
         self.predicted_impact: np.ndarray | None = None
@@ -393,6 +395,10 @@ class HopAutopilot:
         )
         if phase == "landing_burn" and not any(e[2] == "Landing burn" for e in self.events):
             self.events.append((t, "ignition", "Landing burn"))
+            if self.landing.retargeted is not None:
+                self.events.append(
+                    (t, "phase", f"Divert limit: safe landing {self.landing.retargeted:,.0f} m off")
+                )
         # legs deploy in the last seconds (low speed / low height): deployed struts lead
         # in engine-first flight and add a destabilising drag moment at speed
         if (
@@ -709,9 +715,20 @@ def run_mission(
         ):
             failure = "crash_legs"
             break
-        if st.agl < -2.0 and sim.touchdown is None and sim.t > 30:
-            failure = "terrain_impact"
-            break
+        if st.agl < 0.0 and sim.touchdown is None and sim.t > 30:
+            # off the collision tiles the terrain is analytic: judge the arrival there
+            u, v, _ = mw.gravity.map_coords(st.pos)
+            if not any(tile.contains(u, v) for tile in mw.tiles):
+                gentle = (
+                    -st.vertical_speed <= vehicle.legs.max_touchdown_speed
+                    and st.horizontal_speed < 2.0
+                    and st.tilt < math.radians(10.0)
+                )
+                failure = "landed_off_site" if gentle else "terrain_impact"
+                break
+            if st.agl < -2.0:
+                failure = "terrain_impact"
+                break
         if landed_t is None and sim.touchdown is not None and sim.t > 30:
             landed_t = sim.t
         if landed_t is not None and sim.t - landed_t > 5.0:

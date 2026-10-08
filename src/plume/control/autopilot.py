@@ -56,11 +56,24 @@ class LandingAutopilot:
         self.allow_ignition = True  # a mission planner may inhibit ignition (e.g. during re-entry)
         self.steer_max_mach = 1.0  # aero steering only when subsonic
         self.supersonic_tilt_deg = 4.0  # tilt cap when steer_max_mach > 1 allows it
+        # unpowered-descent steering law: "zem" (3 miss / t^2) or the experimental
+        # "drag_lag" law (first-order lateral response); neither has enough authority
+        # to null large misses (docs/models/guidance.md)
+        self.coast_law = "zem"
+        self.coast_gain = 1.0
         # experimental: ignite early when the predicted miss needs divert time. Off: in
         # Monte Carlo it did not improve accuracy (near terminal velocity the aero force
         # dominates the low-throttle thrust) - see docs/models/guidance.md
         self.divert_aware = False
         self.max_divert_time = 20.0  # s, caps how early a divert can start the burn
+        # landing-burn divert reach (m); beyond it the vehicle lands at the closest
+        # reachable point (None = always chase the pad)
+        self.max_divert_m: float | None = None
+        # divert gate (see v_ref / _plan_gate); off unless a mission enables it
+        self.divert_gate = False
+        self.v_gate = 15.0
+        self.h_gate = 0.0
+        self.retargeted: float | None = None  # predicted miss that triggered a retarget
         self.att = AttitudeController(sim)
         self.reset()
 
@@ -80,8 +93,29 @@ class LandingAutopilot:
         return t_max, t_max / st.mass
 
     def v_ref(self, h: float) -> float:
-        """Reference descent speed (positive down): constant deceleration ``a_v`` down to ``sink``."""
+        """Reference descent speed (positive down): constant deceleration ``a_v`` down to
+        ``sink`` - or, with a divert gate, down to ``v_gate`` at ``h_gate`` and then a slow
+        descent (tapering to ``sink``) during which thrust tilt flies the divert."""
+        if self.h_gate > 0.0:
+            if h > self.h_gate:
+                return math.sqrt(self.v_gate**2 + 2.0 * self.a_v * (h - self.h_gate))
+            return max(self.sink, min(self.v_gate, self.sink + self.v_gate * h / self.h_gate))
         return math.sqrt(self.sink * self.sink + 2.0 * self.a_v * max(h, 0.0))
+
+    def _plan_gate(self, st, miss_h: float, g: float) -> None:
+        """Divert gate: brake hard to ``v_gate`` at a height that leaves enough slow-descent
+        time to fly ``miss_h`` sideways (bang-bang at a fraction of the tilt authority),
+        limited by the propellant left after the stopping burn."""
+        if not self.divert_gate or miss_h < 30.0:
+            self.h_gate = 0.0
+            return
+        a_lat = 0.6 * g * math.tan(self.max_tilt)
+        t_div = 2.0 * math.sqrt(miss_h / a_lat)
+        isp_g = self.sim.nominal.engine.isp_vac * 9.80665
+        spare = self.sim.prop_mass - 0.6 * st.mass * (1.0 - math.exp(-1.3 * st.speed / isp_g))
+        t_afford = max(spare, 0.0) * isp_g / (st.mass * g)  # hovering seconds left
+        t_div = min(t_div, 0.5 * t_afford, 30.0)
+        self.h_gate = float(np.clip(0.5 * self.v_gate * t_div + 30.0, 40.0, 500.0)) if t_div > 2.0 else 0.0
 
     def _plan_decel(self, a_max: float, g: float) -> None:
         """Use a fraction of the thrust margin over gravity for the stopping profile."""
@@ -117,13 +151,31 @@ class LandingAutopilot:
         rel_h = rel - (rel @ up) * up
         v_h = st.vel_com - (st.vel_com @ up) * up
         t_go = max(h / max(descent, 1.0) * 1.6, self.min_tgo)
+        if self.h_gate > 0.0 and self.phase == "burn":
+            # time left: the rest of the braking leg plus the slow descent below the gate
+            t_go = max(
+                max(h - self.h_gate, 0.0) / max(descent, 1.0) * 1.6
+                + min(h, self.h_gate) / (0.5 * self.v_gate),
+                self.min_tgo,
+            )
         a_h = -6.0 * (rel_h + v_h * t_go) / (t_go * t_go) + 2.0 * v_h / t_go
         if self.phase == "coast" and self.predicted_miss is not None:
             # a mission planner supplies the drag- and wind-aware predicted miss (the true
             # zero-effort miss of an unpowered fall); null it over the remaining fall time
             t_fall = max(h / max(descent, 1.0), self.min_tgo)
             miss = self.predicted_miss - (self.predicted_miss @ up) * up
-            a_h = -3.0 * miss / (t_fall * t_fall)
+            if self.coast_law == "drag_lag":
+                # near terminal velocity the horizontal velocity follows a lateral force
+                # with a first-order lag tau = V / g (drag relaxation), so a sustained
+                # acceleration a moves the impact point by about a * tau * t_fall
+                tau = max(float(np.linalg.norm(st.vel_com)) / g, 1.0)
+                a_h = -self.coast_gain * miss / (tau * min(t_fall, 4.0 * tau) + 1e-6)
+            else:
+                a_h = -3.0 * miss / (t_fall * t_fall)
+
+        if self.phase == "coast" and self.divert_gate and self.predicted_miss is not None:
+            pm = self.predicted_miss - (self.predicted_miss @ up) * up
+            self._plan_gate(st, float(np.linalg.norm(pm)), g)
 
         if self.phase == "coast":
             # ignite a little early to absorb throttle lag and the attitude transient
@@ -157,6 +209,7 @@ class LandingAutopilot:
                         )
             if wants and self.allow_ignition and sim.prop_mass > 0:
                 self.phase = "burn"
+                self._check_divert_limit(st, up, rel_h, v_h, h, descent)
             else:
                 # engine-first into the (estimated) airflow, tilted to steer with body lift
                 v_air = st.vel_com - self.wind_forecast(st)
@@ -177,6 +230,17 @@ class LandingAutopilot:
                 _, rcs = self.att(st, axis, 0.0)
                 return 0.0, np.zeros(2), rcs
 
+        if self.h_gate > 0.0 and self.phase == "burn":
+            # fuel guard: abandon the divert (land straight down from here) once the
+            # propellant left only just covers the remaining descent
+            isp_g = sim.nominal.engine.isp_vac * 9.80665
+            t_afford = sim.prop_mass * isp_g / (st.mass * g)
+            t_land = h / max(min(descent, self.v_gate), 1.0) + 4.0
+            if t_afford < 1.5 * t_land:
+                self.h_gate = 0.0
+                self.a_v = max(self.a_v, 0.5 * descent * descent / max(h, 1.0))
+                self.target = st.com - h * up  # land where we are (horizontal aim only)
+
         # ---- vertical channel: track the stopping profile
         # near the ground the descent rate tapers linearly, whatever the decel profile
         vr = min(self.v_ref(h), self.sink + 0.8 * max(h, 0.0))
@@ -187,7 +251,7 @@ class LandingAutopilot:
         err_v = descent - vr  # >0: falling too fast
         self.integral = float(np.clip(self.integral + err_v * self.dt, -5.0, 5.0))
         # following v_ref exactly needs a constant deceleration a_v (feed-forward)
-        ff = self.a_v if descent > self.sink else 0.0
+        ff = self.a_v if descent > self.sink and h > self.h_gate else 0.0
         a_up = g + ff + self.kv * err_v + self.ki * self.integral
 
         if h < 30.0:  # kill residual drift before touchdown; stop chasing the pad
@@ -204,6 +268,21 @@ class LandingAutopilot:
         self.last_axis = axis
         gimbal, rcs = self.att(st, axis, max(sim.thrust, 0.5 * thrust))
         return throttle, gimbal, rcs
+
+    def _check_divert_limit(self, st, up, rel_h, v_h, h, descent) -> None:
+        """Safe-landing logic: if the pad is beyond the landing burn's divert reach,
+        retarget to the reachable point closest to it instead of spending the landing
+        propellant on an impossible divert (and crashing)."""
+        if self.max_divert_m is None:
+            return
+        if self.predicted_miss is not None:
+            miss = self.predicted_miss - (self.predicted_miss @ up) * up
+        else:
+            miss = rel_h + v_h * max(h / max(descent, 1.0), 0.0)
+        m = float(np.linalg.norm(miss))
+        if m > self.max_divert_m:
+            self.target = self.target + miss * (1.0 - self.max_divert_m / m)
+            self.retargeted = m
 
     def wind_forecast(self, st: State) -> np.ndarray:
         """Mean wind profile (as uplinked before flight); gusts and turbulence are unknown."""

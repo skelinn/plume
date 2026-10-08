@@ -27,13 +27,12 @@ W, H = 640, 360
 # name: (query, playback fps of the GIF)
 SHOTS = {
     "hop": ("replay=cargo_hop_demo.plume.json.gz&camera=chase&t0=0&t1=110&fps=0.65", 14),
-    "hop_landing": ("replay=cargo_hop_demo.plume.json.gz&camera=chase&t0=496&t1=527&fps=2", 14),
+    "hop_landing": ("replay=cargo_hop_demo.plume.json.gz&camera=chase&t0=546&t1=571&fps=2", 14),
     "landing": ("replay=landing_pid_full_descent.plume.json.gz&camera=chase&t0=4&t1=40&fps=2", 14),
     "compare": (
         "compare=hobby_real.plume.json.gz,hobby_sim_calibrated.plume.json.gz&camera=chase&t0=-0.4&t1=13&fps=6",
         15,
     ),
-    "hop_top": ("replay=cargo_hop_demo.plume.json.gz&camera=top&t0=0&t1=525&fps=0.14", 12),
 }
 
 

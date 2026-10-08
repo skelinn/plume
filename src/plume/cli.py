@@ -431,6 +431,11 @@ def mc(
         "success",
         f"{100 * summary['success_probability']:.1f} % (95 % CI {100 * lo:.1f}-{100 * hi:.1f} %)",
     )
+    rlo, rhi = summary["recovery_ci95"]
+    table.add_row(
+        "vehicle recovered",
+        f"{100 * summary['recovery_probability']:.1f} % (95 % CI {100 * rlo:.1f}-{100 * rhi:.1f} %)",
+    )
     if land:
         table.add_row("CEP50 / CEP90", f"{land['cep50_m']:,.1f} / {land['cep90_m']:,.1f} m")
         a, b = land["ellipse99"]["semi_axes_m"]

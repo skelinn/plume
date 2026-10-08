@@ -570,6 +570,14 @@ class HopGuidanceSpec(Spec):
     max_flight_path_deg: float = Field(
         45.0, description="planner: cap on the MECO flight-path angle"
     )
+    max_divert_m: float | None = Field(
+        250.0, description="landing-burn divert reach; beyond it land at the closest reachable point"
+    )
+    divert_gate: bool = Field(
+        False,
+        description="experimental: brake to a slow gate above the pad and fly the divert at "
+        "low speed (did not improve Monte Carlo results yet; docs/models/guidance.md)",
+    )
 
 
 class ScoringSpec(Spec):

@@ -306,6 +306,9 @@ def run_mc(
 
 
 # ----------------------------------------------------------------------------- statistics
+INTACT_REASONS = frozenset({"landed", "missed_target", "landed_off_site", "not_at_rest"})
+
+
 def wilson_interval(k: int, n: int, z: float = 1.959964) -> tuple[float, float]:
     """Wilson score interval for a binomial proportion (95 % by default)."""
     if n == 0:
@@ -382,6 +385,9 @@ def summarize(records: list[dict], ds: DispersionSpec, target_radius: float | No
     k = sum(ok)
     lo, hi = wilson_interval(k, n)
     reasons = Counter(x.get("reason", "?") for x in res)
+    # vehicle recovered intact (on or off target): the reusability side of dependability
+    intact = sum(1 for x in res if x.get("reason") in INTACT_REASONS)
+    ilo, ihi = wilson_interval(intact, n)
     # touchdowns (anything that came to rest on legs, on or off target)
     td = [
         r
@@ -431,6 +437,8 @@ def summarize(records: list[dict], ds: DispersionSpec, target_radius: float | No
         "success_probability": k / n if n else 0.0,
         "success_ci95": [lo, hi],
         "failure_modes": dict(reasons.most_common()),
+        "recovery_probability": intact / n if n else 0.0,
+        "recovery_ci95": [ilo, ihi],
         "target_radius_m": target_radius,
         "landing": land,
         "points": pts.tolist(),
@@ -599,6 +607,7 @@ code{{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px}}
 <div class="kpis">
 <div class="kpi"><b>{100 * s["success_probability"]:.1f} %</b><span>success</span></div>
 <div class="kpi"><b>{100 * lo:.1f}–{100 * hi:.1f} %</b><span>95 % interval</span></div>
+<div class="kpi"><b>{100 * s.get("recovery_probability", 0):.1f} %</b><span>vehicle recovered</span></div>
 <div class="kpi"><b>{_fmt(land.get("cep50_m"))} m</b><span>CEP50</span></div>
 <div class="kpi"><b>{_fmt(land.get("cep90_m"))} m</b><span>CEP90</span></div>
 <div class="kpi"><b>{_fmt((e99.get("semi_axes_m") or [None])[0])} m</b><span>99 % ellipse, major</span></div>
