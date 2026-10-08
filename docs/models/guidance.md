@@ -1,7 +1,7 @@
 # Guidance, navigation and control: the cargo hop
 
 **Code:** `src/plume/missions/hop.py` (`HopAutopilot`, `plan_ascent`), `src/plume/missions/targeting.py` (`ImpactPredictor`, `kepler_impact`), `src/plume/control/autopilot.py` (`LandingAutopilot`), `src/plume/control/attitude.py`
-**Verification status:** not applicable: this is the *vehicle's* flight software, not a physics model. The simulator's job is to show how well it works. The Monte Carlo campaigns below do that, and they show that this guidance is **not yet dependable**.
+**Verification status:** not applicable: this is the *vehicle's* flight software, not a physics model. The simulator's job is to show how well it works; the Monte Carlo campaigns below measure it. On the real route at high fidelity, 87.5 % of runs (95 % CI 77–94 %) land the cargo on target.
 
 ## Flight phases
 
@@ -28,6 +28,23 @@
 
 In high fidelity all of this acts on the navigation estimate (see `navigation.md`). Planning uses the *nominal* vehicle and the *forecast* environment, while the simulator flies the dispersed truth.
 
+## Monte Carlo results: `real_hop`, high fidelity, 64 runs
+
+| version | change | success (95 % CI) | recovered | CEP50 |
+|---|---|---|---|---|
+| v4 | hoverslam, open-loop gravity turn, subsonic steering | 22 % (14 / 64) | | |
+| v6 | closed-loop ascent; steering allocation fix; supersonic aero steering | **87.5 % (77.2–93.5 %)** | 93.8 % | 5 m (CEP90 28 m) |
+
+Remaining failures:
+- 4 safe landings off target
+- 3 terrain impacts
+- 1 tip-over
+
+Other findings:
+- **Sensitivity:** wind speed ρ = 0.78, temperature −0.32, dry mass −0.30, throttle lag −0.26, dry CG 0.21.
+- **Cargo load:** the peak is 5.97 g (median) and 6.28 g (p95) against the 6 g limit, so the g-limited throttle needs margin.
+- **Propellant left:** 85 kg at p5, 133 kg median.
+
 ## Monte Carlo results: `demo_hop`, fast fidelity, 200 runs
 
 Dispersions are in `configs/dispersions/demo_hop.yaml`:
@@ -43,6 +60,9 @@ Dispersions are in `configs/dispersions/demo_hop.yaml`:
 | v2 | kick-hold fix, g-limited planner and predictor, drag estimation, Mach-aware fins | 19.0 % (14.2–25.0 %) | 74 % | 234 m |
 | v3 | consistent entry-burn cutoff (coast prediction) | stopped at 33 runs: 2 landed, so worse; reverted | | |
 | v4 | v2 plus divert-limit safe landing and off-site landing classification | 19.0 % (14.2–25.0 %) | 78 % (72–83 %) | 238 m |
+| v6 | closed-loop ascent and steering allocation fix (high fidelity gains supersonic steering) | 12.5 % (8.6–17.8 %) | 81.5 % | 257 m |
+
+In fast fidelity the correct allocation does *worse* than the buggy one did. The strip-theory side force flips sign with tilt, so this table measures the fast aero model's limits more than the guidance.
 
 All versions use the same 200 seeded draws, so the comparison is run by run. On the first 63 runs, v2 and v4 land exactly the same 9.
 
@@ -67,7 +87,7 @@ Dependability figures for the cargo hop should therefore come from **high-fideli
 
 ## Findings
 
-- **Terminal divert authority is the weak point.** Near terminal velocity, drag carries the weight. The landing burn therefore runs near minimum throttle, where tilting the vehicle produces more aerodynamic crossflow force (in the opposite direction) than lateral thrust. Body lift during the unpowered descent is small (net lateral force well under 1 kN), because the grid-fin trim force cancels most of the hull's normal force.
+- **Terminal divert authority was the weak point** before the high-fidelity steering fix, and it still is in fast fidelity. Near terminal velocity, drag carries the weight. The landing burn therefore runs near minimum throttle, where tilting the vehicle produces more aerodynamic crossflow force (in the opposite direction) than lateral thrust. Body lift during the unpowered descent is small (net lateral force well under 1 kN), because the grid-fin trim force cancels most of the hull's normal force.
   - Tried and rejected: early "divert" ignition and supersonic steering both made results worse.
   - **Needed:** a powered-descent guidance law that plans the divert at high thrust, for example a convex-optimisation (G-FOLD-type) landing burn, plus more lateral control authority.
 - **Sensitivity** (Spearman ρ with miss distance, v4, 200 runs; |ρ| > 0.14 is significant):

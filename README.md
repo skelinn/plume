@@ -122,8 +122,8 @@ uv run plume terrain fetch --site 32.990,-106.986 --site2 35.335,-99.225 --radiu
 ### 2 · Dependability analysis
 
 ```bash
-uv run plume mc demo_hop --workers 8            # 200 runs, about 25 min on 8 cores; docs/mc/demo_hop_fast.html
-uv run plume mc real_hop --workers 8            # high fidelity
+uv run plume mc real_hop --runs 64 --workers 8  # high fidelity, about 45 min on 8 cores; docs/mc/real_hop_high.html
+uv run plume mc demo_hop --workers 8            # fast screening, 200 runs
 uv run plume vv-report                          # docs/vv/report.html
 ```
 
@@ -163,43 +163,47 @@ The bundled logs are synthetic "real" flights. A 6-DOF truth model with differen
 
 ## Monte Carlo: how dependable is the cargo hop?
 
-This is the honest answer for today's flight software on the 8.3 t cargo hopper.
+**Real route, high fidelity:** Spaceport America → Burns Flat, 761 km, 250 kg cargo, 64 runs (`plume mc real_hop`).
 
-The run below uses `demo_hop` at fast fidelity, 200 runs, with the dispersions in `configs/dispersions/demo_hop.yaml`:
-
-- **Engine:** thrust 1.5 %, Isp 0.5 %, misalignment 0.15°
-- **Mass:** dry mass 1 %, CG 5 cm, cargo 2 %
-- **Aerodynamics:** axial force 10 %, grid fins 15 %
-- **Weather:** wind 2.5 m/s and 30° error against the forecast, gusts up to 6 m/s, temperature ±6 K
+The run uses the full high-fidelity stack:
+- rotating WGS-84 Earth, NRLMSISE-00 and von Kármán turbulence
+- the aerodynamic database
+- actuator dynamics
+- flight software flying on its EKF estimate
 
 <!-- MC:START -->
-| version | mission success (95 % CI) | vehicle recovered intact | CEP50 | change |
-|---|---:|---:|---:|---|
-| v1 | 11.5 % (7.8–16.7 %) | 69 % | 243 m | first campaign |
-| v2 | 19.0 % (14.2–25.0 %) | 74 % | 234 m | kick-hold fix (crosswind lofting), g-limited predictor, drag estimation |
-| v4 | 19.0 % (14.2–25.0 %) | 78 % (72–83 %) | 238 m | divert-limit safe landing instead of chasing an unreachable pad |
+| | result (95 % CI) |
+|---|---:|
+| **mission success** (cargo inside the 50 m target) | **87.5 %** (77.2–93.5 %) |
+| vehicle recovered intact | 93.8 % (85.0–97.5 %) |
+| CEP50 / CEP90 | 5 m / 28 m |
+| propellant left, p5 / median | 85 / 133 kg |
+| peak cargo load, median / p95 | 5.97 / 6.28 g (limit 6 g) |
+| failures | 4 off-target landings, 3 terrain impacts, 1 tip-over |
 
-_Mission success = cargo on the 50 m target. Vehicle recovered = landed intact anywhere. Same 200 seeded draws in every version. Report: [docs/mc/demo_hop_fast.html](docs/mc/demo_hop_fast.html)._
+_Report: [docs/mc/real_hop_high.html](docs/mc/real_hop_high.html). The dispersions in `configs/dispersions/real_hop.yaml`:_
+- _engine: thrust 1.5 %, Isp 0.5 %, misalignment 0.15°, throttle lag_
+- _mass: dry mass 1 %, CG 5 cm, cargo 2 %_
+- _aero: axial force 10 %, grid fins 15 %_
+- _RCS: 5 %_
+- _weather: wind 2.5 m/s and 30° error against the forecast, gusts up to 6 m/s, temperature ±6 K, solar activity, light or moderate turbulence_
 <!-- MC:END -->
 
-<p align="center"><img src="docs/assets/dispersion_overlay.jpg" width="70%" alt="Landing dispersion ellipse drawn in the viewer's top-down engineering view"></p>
+<p align="center"><img src="docs/assets/dispersion_overlay.jpg" width="80%" alt="Viewer, top-down engineering view at touchdown: the 99 % landing ellipse and the touchdown points of all 64 high-fidelity runs around the landing pad"></p>
 
-What the analysis found (details in [docs/models/guidance.md](docs/models/guidance.md)):
+**How the guidance got there:** each version was measured on the same seeded draws, and each fix came from a Monte Carlo finding.
 
-- **Terminal divert authority is the weak point.** Near terminal velocity, aerodynamics outweighs the low-throttle thrust, so the landing burn cannot fly out a few hundred metres of miss. Body lift in the unpowered descent is small. The fix is a powered-descent guidance redesign (convex-optimisation landing burn) and more lateral authority.
-- **What drives misses** (Spearman ρ with miss distance, 200 runs):
-  - wind speed 0.52, by far the strongest
-  - engine misalignment −0.20
-  - cargo mass 0.19
-  - temperature −0.16
-  - throttle lag −0.14
-  - drag coefficient 0.13
+| version | change | high-fidelity success |
+|---|---|---:|
+| v4 | baseline: hoverslam landing, open-loop gravity turn, subsonic-only steering | 22 % (14 / 64) |
+| v6 | closed-loop ascent (track the planned flight-path angle); descent steering asks for a *change* from the natural aero force; supersonic steering where the aero database shows strong, consistent authority | **87.5 % (56 / 64)** |
 
-  Individual high-drag draws still move the impact point by kilometres after the entry burn, so aero coefficients should be pinned down to a few percent (wind tunnel, CFD, then `plume calibrate` on flight data).
-- **The propellant margin is about 2–3 %.** Size the tanks to the Monte Carlo 99th percentile, not the nominal flight.
-- **Wind:** success falls from about 44 % in near-calm air to 0 % above 8 m/s.
+What the analysis still shows (details in [docs/models/guidance.md](docs/models/guidance.md)):
 
-The simulator's job is to expose these problems before hardware does.
+- **Wind speed** is the dominant driver of miss distance (Spearman ρ = 0.78). Temperature (−0.32), dry mass (−0.30) and throttle lag (−0.26) follow.
+- **Cargo g-limit:** the median run peaks at 5.97 g, and 5 % exceed 6.28 g. The g-limited throttle needs margin for actuator lag.
+- **Propellant:** the worst 5 % land with under 85 kg.
+- **Fast fidelity is not a dependability tool for this vehicle.** Strip theory gives a sign-flipping side force when the engine-first body tilts. With the same guidance, the fast campaign scores 12.5 % success over 200 runs, 81.5 % recovery and a 257 m CEP50 ([report](docs/mc/demo_hop_fast.html)). Quote high-fidelity campaigns.
 
 ## Results: PID vs RL
 
@@ -314,7 +318,7 @@ src/plume/
 - **Vehicle effects not modelled:** propellant slosh, structural bending modes, landing-gear crush stroke and soil models. The IMU is assumed at the CG.
 - **Navigation:** the onboard terrain map is assumed perfect, and there is no RTK or landing-beacon option.
 - **Geoid:** DEM heights are orthometric, the simulator uses ellipsoidal heights, and the geoid offset (tens of metres) is not applied.
-- **Flight software:** the cargo-hop guidance is a working baseline, not a dependable flight product (see the Monte Carlo section).
+- **Flight software:** the cargo-hop guidance reaches 87.5 % success at high fidelity under the stated dispersions. It is not flight-qualified: it exceeds the cargo g-limit slightly, and the dispersion bounds are representative rather than measured.
 - **Presets:** the vehicle presets are representative, not models of specific commercial products.
 
 ## Contributing
