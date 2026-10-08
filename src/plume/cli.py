@@ -53,15 +53,17 @@ def sim(
     wind: Annotated[float, typer.Option(help="mean wind speed, m/s")] = 0.0,
     gusts: Annotated[float, typer.Option(help="max gust speed, m/s")] = 0.0,
     live: Annotated[bool, typer.Option(help="stream to a running `plume viz`")] = False,
+    fidelity: Annotated[str, typer.Option(help="fast | high")] = "fast",
 ):
     """Run a scripted 6-DOF flight and save a replay."""
     from plume.scenarios import SCENARIOS
 
     v = load_vehicle(vehicle)
     world = WorldSpec(
+        fidelity=fidelity,
         wind=WindSpec(
             speed=wind, turbulence=0.15 * wind, gust_rate=0.1 if gusts else 0.0, gust_max=gusts
-        )
+        ),
     )
     out = out or Path("runs") / f"{script}_{v.name}.plume.json.gz"
     streamer, on_frame = _live(live)
@@ -81,13 +83,14 @@ def land(
     episodes: int = 1,
     run_dir: Annotated[Path, typer.Option(help="PPO run directory")] = Path("runs/ppo_landing"),
     save: Annotated[Path | None, typer.Option(help="replay path (first episode)")] = None,
+    fidelity: Annotated[str, typer.Option(help="fast | high (aero database, actuator dynamics)")] = "fast",
 ):
     """Fly the landing task with the PID/guidance autopilot or a trained PPO agent."""
     from plume.envs.landing_env import AutopilotPolicy, LandingEnv
     from plume.recording import save_replay
     from plume.rl.evaluate import run_episodes, sb3_policy_factory
 
-    env = LandingEnv(record=True, fixed_stage=True)
+    env = LandingEnv(record=True, fixed_stage=True, fidelity=fidelity)
     names = [s.name for s in env.stages]
     idx = int(stage) if stage.isdigit() else names.index(stage)
     if controller == "pid":

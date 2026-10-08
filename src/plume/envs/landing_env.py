@@ -50,6 +50,7 @@ class LandingEnv(gym.Env):
         stage: int = 0,
         record: bool = False,
         fixed_stage: bool = False,
+        fidelity: str | None = None,
     ):
         super().__init__()
         self.spec_cfg = (
@@ -57,7 +58,10 @@ class LandingEnv(gym.Env):
         )
         cfg = self.spec_cfg
         self.vehicle = load_vehicle(cfg.vehicle)
-        world = cfg.world.model_copy(update={"dt": cfg.physics_dt})
+        update = {"dt": cfg.physics_dt}
+        if fidelity is not None:  # evaluation at high fidelity (training stays fast)
+            update["fidelity"] = fidelity
+        world = cfg.world.model_copy(update=update)
         self.sim = RocketSim(self.vehicle, world)
         self.n_sub = max(1, round(cfg.control_dt / cfg.physics_dt))
         self.stages = cfg.curriculum.stages

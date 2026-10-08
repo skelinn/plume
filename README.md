@@ -216,6 +216,8 @@ _200 seeded episodes per stage and controller; ± is the 95% interval. Fuel, err
 
 The stages run from a 30–80 m drop to a 2.5–4 km descent at 110–170 m/s in 2–10 m/s wind with gusts. A landing counts if touchdown is under 2 m/s vertical and 1 m/s horizontal, the vehicle comes to rest upright, and it is inside the 10 m pad. PPO rows appear once the idle-aware trainer has finished its 50M-step curriculum; `plume bench` regenerates the table.
 
+At high fidelity (`plume land --fidelity high`) the same PID baseline does better on the mid descent (20/20 vs 16/20 in a 20-episode check) and much worse on the full descent (2/20 with 6 leg crashes vs 7/20). The finless lander is statically unstable when flying engine-first under the database aerodynamics, and the gimbal actuator lag makes that harder to control. Results from the fast model alone would overstate this controller.
+
 ## Physics models
 
 Each model has a page in [docs/models/](docs/models/README.md) covering its equations, sources, assumptions, validity range, uncertainty and verification status:
