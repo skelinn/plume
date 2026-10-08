@@ -83,7 +83,7 @@ def markdown_table(results: dict, stages: list[str]) -> str:
     ]
 
     def fmt(x, d=1):
-        return "â€“" if x != x else f"{x:.{d}f}"
+        return "–" if x != x else f"{x:.{d}f}"
 
     for st in stages:
         for ctrl, label in (("pid", "PID / guidance"), ("ppo", "PPO")):
