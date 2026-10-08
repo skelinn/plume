@@ -7,49 +7,50 @@
         "episodes": 200,
         "success_rate": 1.0,
         "success_ci95": 0.0,
-        "fuel_kg": 47.391646856361746,
-        "landing_error_m": 2.3555012487231517,
-        "touchdown_vz_mps": 0.786267530333178,
+        "fuel_kg": 47.35834613740599,
+        "landing_error_m": 2.3546140140054654,
+        "touchdown_vz_mps": 0.7923770809416055,
         "reasons": {
           "landed": 200
         }
       },
       "low_descent": {
         "episodes": 200,
-        "success_rate": 0.945,
-        "success_ci95": 0.031596452332500885,
-        "fuel_kg": 98.48849507629848,
-        "landing_error_m": 3.8398894184169996,
-        "touchdown_vz_mps": 0.7493877100469011,
+        "success_rate": 0.965,
+        "success_ci95": 0.025470575179999382,
+        "fuel_kg": 98.34993457775353,
+        "landing_error_m": 3.7304302792682065,
+        "touchdown_vz_mps": 0.7504434845707822,
         "reasons": {
-          "landed": 189,
-          "missed": 11
+          "landed": 193,
+          "missed": 7
         }
       },
       "mid_descent": {
         "episodes": 200,
-        "success_rate": 0.855,
-        "success_ci95": 0.048798686457731624,
-        "fuel_kg": 163.43565852821396,
-        "landing_error_m": 2.9683140557003256,
-        "touchdown_vz_mps": 0.754050213930166,
+        "success_rate": 0.895,
+        "success_ci95": 0.04248613656241292,
+        "fuel_kg": 163.60734024990072,
+        "landing_error_m": 2.9846334549823412,
+        "touchdown_vz_mps": 0.7523889697367853,
         "reasons": {
-          "landed": 171,
-          "missed": 29
+          "landed": 179,
+          "missed": 20,
+          "not_at_rest": 1
         }
       },
       "full_descent": {
         "episodes": 200,
-        "success_rate": 0.425,
-        "success_ci95": 0.06851244412513685,
-        "fuel_kg": 227.8705235975864,
-        "landing_error_m": 3.705170285227683,
-        "touchdown_vz_mps": 0.7730424159527474,
+        "success_rate": 0.5,
+        "success_ci95": 0.06929646455628166,
+        "fuel_kg": 229.04655187578547,
+        "landing_error_m": 3.3159871265982925,
+        "touchdown_vz_mps": 0.7609773451670065,
         "reasons": {
-          "landed": 85,
-          "missed": 106,
-          "not_at_rest": 7,
-          "hard_horizontal": 2
+          "landed": 100,
+          "missed": 92,
+          "not_at_rest": 5,
+          "hard_horizontal": 3
         }
       }
     }
