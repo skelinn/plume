@@ -10,7 +10,7 @@ description: >-
   the first stage returning to the launch site.
 stages:
   - name: booster
-    reserve: 3100.0           # kg kept at MECO for boost-back, entry and landing burns
+    reserve: 3300.0           # kg kept at MECO for boost-back, entry and landing burns
     vehicle:
       name: launcher_booster
       description: Reusable first stage with grid fins and landing legs.

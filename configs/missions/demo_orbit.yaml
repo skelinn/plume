@@ -23,7 +23,7 @@ orbit:
 ascent:
   rise_time: 6.0
   kick_time: 6.0
-  staging_flight_path_deg: 30.0
+  staging_flight_path_deg: 35.0
   max_g: 5.0
 upper_guidance:
   freeze_time: 6.0

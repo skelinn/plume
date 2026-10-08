@@ -81,6 +81,25 @@ export class World {
     this.trail = new Trail({ maxSpeed: Math.max(replay.maxSpeed(), 1) });
     this.scene.add(this.trail.group);
 
+    // multi-vehicle replays: one rocket (+ trail) per vehicle; the camera, HUD and engineering
+    // overlay follow the focused one (setFocus)
+    const v0 = replay.vehicles?.[0] || { id: 'vehicle', name: this.vehicle.name, role: 'vehicle', persist: true };
+    this.fleet = [{ ...v0, replay, rocket: this.rocket, trail: this.trail, _trailAdded: 0, _trailStride: Math.max(1, Math.ceil(replay.n / MAX_TRAIL_POINTS)), visible: true }];
+    for (const v of (replay.vehicles || []).slice(1)) {
+      const rk = new Rocket(v.replay.meta.vehicle, v.replay, this.atm, { quality });
+      this.scene.add(rk.group);
+      const fairing = /fairing/.test(v.role);
+      const tr = fairing ? null : new Trail({ maxSpeed: Math.max(v.replay.maxSpeed(), 1) });
+      if (tr) this.scene.add(tr.group);
+      this.fleet.push({
+        ...v, rocket: rk, trail: tr, visible: false, _trailAdded: 0,
+        _trailStride: Math.max(1, Math.ceil(v.replay.n / MAX_TRAIL_POINTS)),
+        baseW: new THREE.Vector3(), quatW: new THREE.Quaternion(), centerW: new THREE.Vector3(),
+      });
+    }
+    this.focus = this.fleet[0];
+    this.vrep = replay; // the focused vehicle's replay
+
     this.terrain = null;
     this.plane = null;
     this.padObjs = [];
@@ -90,8 +109,6 @@ export class World {
     this.quatW = new THREE.Quaternion();
     this.centerW = new THREE.Vector3();
     this.state = null;
-    this._trailAdded = 0;
-    this._trailStride = Math.max(1, Math.ceil(replay.n / MAX_TRAIL_POINTS));
     this.warnings = [];
     this._buildGround();
     this._buildPads();
@@ -174,6 +191,14 @@ export class World {
       if (!pad.synthetic && (!this.targetW || this.targetW.distanceTo(W) > Math.max(pad.radius, this.targetR) * 1.5)) this._addLabel(pad.name || 'PAD', () => W, 'pad');
     }
     if (this.targetW) this._addLabel('TARGET', () => this.targetW, 'target');
+    for (const f of this.fleet.slice(1)) {
+      if (!f.trail) continue; // jettisoned hardware gets no label
+      this._addLabel((f.name || f.id).toUpperCase(), () => f.centerW, 'vehicle', () => f.visible && f !== this.focus);
+    }
+    if (this.fleet.length > 1) {
+      const f0 = this.fleet[0];
+      this._addLabel((f0.name || 'vehicle').toUpperCase(), () => f0.centerW || this.centerW, 'vehicle', () => this.focus !== f0);
+    }
     this._padUniforms();
     if (this.labelLayer) {
       this.locator = document.createElement('div');
@@ -268,26 +293,30 @@ export class World {
     return hs[Math.floor(hs.length / 2)];
   }
 
-  _addLabel(text, getW, kind) {
+  _addLabel(text, getW, kind, vis = null) {
     if (!this.labelLayer) return;
     const el = document.createElement('div');
     el.className = `marker marker-${kind}`;
     el.innerHTML = '<i></i><span class="t"></span><span class="d"></span>';
     el.querySelector('.t').textContent = text;
     this.labelLayer.append(el);
-    this.labels.push({ el, getW, kind, d: el.querySelector('.d') });
+    this.labels.push({ el, getW, kind, vis, d: el.querySelector('.d') });
   }
 
   /** Add trail points for frames that appeared since the last call (all of them at load). */
   syncTrail() {
-    const r = this.replay, F = r.frames;
+    for (const f of this.fleet) if (f.trail) this._syncTrail(f);
+  }
+
+  _syncTrail(f) {
+    const r = f.replay, F = r.frames;
     const tmp = new THREE.Vector3();
     const last = r.n - 1;
     // measured flights carry sensor noise: draw their path through a ~1 s moving average
     const k = r.source === 'real' && r.n > 2 ? Math.max(1, Math.round(0.5 / Math.max((r.tEnd - r.t0) / (r.n - 1), 1e-3))) : 0;
     const p = [0, 0, 0];
-    for (let i = this._trailAdded; i <= last; i += 1) {
-      if (!r.live && i % this._trailStride !== 0 && i !== last) continue;
+    for (let i = f._trailAdded; i <= last; i += 1) {
+      if (!r.live && i % f._trailStride !== 0 && i !== last) continue;
       const v = F.vel[i];
       let pos = F.pos[i];
       if (k) {
@@ -297,14 +326,35 @@ export class World {
         const nn = b - a + 1;
         pos = [p[0] / nn, p[1] / nn, i === 0 ? F.pos[i][2] : p[2] / nn];
       }
-      this.trail.addPoint(enuToW(pos, tmp), F.t[i], Math.hypot(v[0], v[1], v[2]), F.phase ? F.phase[i] : null);
+      f.trail.addPoint(enuToW(pos, tmp), F.t[i], Math.hypot(v[0], v[1], v[2]), F.phase ? F.phase[i] : null);
     }
-    this._trailAdded = r.n;
+    f._trailAdded = r.n;
+  }
+
+  /** All trails (one per vehicle that has one). */
+  get trails() { return this.fleet.map((f) => f.trail).filter(Boolean); }
+
+  setTrailMode(mode) { for (const tr of this.trails) tr.setColorBy(mode); }
+
+  /** Follow another vehicle of a multi-vehicle replay (id from replay.vehicles). */
+  setFocus(id) {
+    const f = this.fleet.find((x) => x.id === id) || this.fleet[0];
+    if (f === this.focus) return f;
+    this.focus = f;
+    this.vrep = f.replay;
+    this.rocket = f.rocket;
+    this.trail = f.trail || this.fleet[0].trail;
+    this.vehicle = f.replay.meta.vehicle;
+    this.L = this.vehicle.length || 5;
+    this.D = this.vehicle.diameter || 0.5;
+    f.rocket.group.visible = true;
+    if (this.locator) this.locator.querySelector('span').textContent = f.name || this.vehicle.name || 'vehicle';
+    return f;
   }
 
   setQuality(q) {
     this.quality = q;
-    this.rocket.setQuality(q);
+    for (const f of this.fleet) f.rocket.setQuality(q);
     const sm = q === 'low' ? 1024 : 2048;
     if (this.sun.shadow.mapSize.x !== sm) {
       this.sun.shadow.mapSize.set(sm, sm);
@@ -317,13 +367,13 @@ export class World {
 
   // ------------------------------------------------------------------ per-frame
   heading(t, basis) {
-    const r = this.replay;
+    const r = this.vrep;
     const horiz = (a, b) => {
       const d = b.clone().sub(a);
       d.addScaledVector(basis.up, -d.dot(basis.up));
       return d;
     };
-    const tau = Math.max(1.5, 0.03 * (r.tEnd - r.t0));
+    const tau = Math.max(1.5, 0.03 * (r.ownTEnd - r.ownT0));
     const a = enuToW(r.sample(t - tau).pos), b = enuToW(r.sample(t + tau).pos);
     let d = horiz(a, b);
     if (d.length() < 0.3) d = this._globalDirection(basis);
@@ -332,8 +382,8 @@ export class World {
   }
 
   _globalDirection(basis) {
-    const r = this.replay;
-    const a = enuToW(r.sample(r.t0).pos), b = enuToW(r.sample(r.tEnd).pos);
+    const r = this.vrep;
+    const a = enuToW(r.sample(r.ownT0).pos), b = enuToW(r.sample(r.ownTEnd).pos);
     const d = b.sub(a);
     d.addScaledVector(basis.up, -d.dot(basis.up));
     return d.length() > 1 ? d : basis.north.clone();
@@ -341,7 +391,8 @@ export class World {
 
   /** Pose the rocket at time t and describe it for the camera rig. */
   update(t, animTime) {
-    const r = this.replay;
+    for (const f of this.fleet) if (f !== this.focus) this._poseOther(f, t, animTime);
+    const r = this.vrep;
     const s = r.sample(t);
     if (!s) return null;
     this.sample = s;
@@ -371,7 +422,7 @@ export class World {
       heading: this.heading(s.t, basis),
       globalHeading: this._globalDirection(basis).normalize(),
       sites,
-      startW: enuToW(r.sample(r.t0).pos),
+      startW: enuToW(r.sample(r.ownT0).pos),
       frame: this.frame,
       spherical: this.frame.spherical,
       span: Math.max(this.D, 2 * (this.vehicle.legs?.span || 0)),
@@ -386,6 +437,33 @@ export class World {
     return this.state;
   }
 
+  /** Pose a vehicle that is not followed: visible inside its track (and after it, if it persists). */
+  _poseOther(f, t, animTime) {
+    const r = f.replay;
+    const vis = r.n > 0 && t >= r.ownT0 - 1e-6 && (t <= r.ownTEnd + 1e-6 || f.persist);
+    f.visible = vis;
+    f.rocket.group.visible = vis;
+    if (f.trail) f.trail.group.visible = t >= r.ownT0;
+    if (!vis) return;
+    const s = r.sample(t);
+    f.baseW = f.baseW || new THREE.Vector3();
+    f.quatW = f.quatW || new THREE.Quaternion();
+    f.centerW = f.centerW || new THREE.Vector3();
+    enuToW(s.pos, f.baseW);
+    quatEnuToW(s.quat, f.quatW);
+    const basis = this.frame.basis(f.baseW);
+    const axis = Y_UP.clone().applyQuaternion(f.quatW);
+    const V = r.meta.vehicle;
+    f.centerW.copy(f.baseW).addScaledVector(axis, (V.length || 5) / 2);
+    const upMesh = basis.up.clone().applyQuaternion(f.quatW.clone().invert());
+    const legH = V.legs?.count > 0 ? V.legs.height || 0 : 0;
+    const alt = Math.max(s.alt ?? 1e3, 0);
+    const agl = alt + legH * Math.max(axis.dot(basis.up), 0);
+    const sunCol = this.atm.sunAt(alt, basis.up);
+    f.rocket.update(s, { upMesh, agl, time: animTime, sunCol });
+    f.trail?.setTime(s.t, f.baseW);
+  }
+
   /** Place everything for rendering relative to `origin`; also updates sky, lights and shadows. */
   layout(origin, cam, animTime, { now = 0 } = {}) {
     const { camera, camW } = cam;
@@ -394,6 +472,15 @@ export class World {
     R.group.position.copy(this.baseW).sub(origin);
     R.group.quaternion.copy(this.quatW);
     R.afterLayout();
+    for (const f of this.fleet) {
+      if (f === this.focus) continue;
+      if (f.visible) {
+        f.rocket.group.position.copy(f.baseW).sub(origin);
+        f.rocket.group.quaternion.copy(f.quatW);
+        f.rocket.afterLayout();
+      }
+      if (f.trail && f.trail !== this.trail) f.trail.layout(origin);
+    }
 
     if (this.terrain) this.terrain.layout(origin);
     if (this.plane) this.plane.layout(camW, origin);
@@ -477,7 +564,7 @@ export class World {
     const rc = this.centerW;
     for (const l of this.labels) {
       const W = l.getW();
-      if (place(l.el, W) && l.kind === 'target') {
+      if (place(l.el, W, l.vis ? l.vis() : true) && l.kind === 'target') {
         const dist = W.distanceTo(rc);
         l.d.textContent = dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${dist.toFixed(0)} m`;
       }
@@ -491,8 +578,7 @@ export class World {
   }
 
   dispose() {
-    this.rocket.dispose();
-    this.trail.dispose();
+    for (const f of this.fleet) { f.rocket.dispose(); f.trail?.dispose(); }
     this.terrain?.dispose();
     this.plane?.dispose();
     this.dust.dispose();

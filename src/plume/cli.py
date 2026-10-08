@@ -218,6 +218,39 @@ def hop(
     console.print(f"replay: [cyan]{path}[/]")
 
 
+@app.command()
+def launch(
+    mission: Annotated[
+        str, typer.Argument(help="launch mission preset or YAML path")
+    ] = "demo_orbit",
+    payload: Annotated[float | None, typer.Option(help="override payload mass, kg")] = None,
+    seed: int = 0,
+    out: Annotated[Path | None, typer.Option(help="replay output path")] = None,
+    live: Annotated[bool, typer.Option(help="stream the upper stage to `plume viz`")] = False,
+    fidelity: Annotated[str | None, typer.Option(help="fast | high")] = None,
+    dt: Annotated[float | None, typer.Option(help="override the physics step, s")] = None,
+):
+    """Fly a multi-stage launch to orbit with booster return to the launch site."""
+    from plume.launcher.mission import run_launch, summary_rows
+    from plume.launcher.spec import load_launch_mission
+
+    spec = load_launch_mission(mission)
+    streamer, on_frame = _live(live)
+    with console.status(f"flying {spec.name} (ascent, staging, orbit and booster return)..."):
+        run = run_launch(
+            spec, seed=seed, fidelity=fidelity, payload_mass=payload, on_frame=on_frame, dt=dt
+        )
+    if streamer:
+        streamer.end(run.recorder.meta.get("outcome"))
+    path = run.recorder.save(out or Path("runs") / f"launch_{spec.name}.plume.json.gz")
+    table = Table(title=f"{spec.name}: {spec.vehicle}", show_header=False)
+    table.add_row("result", "[green]success[/]" if run.success else f"[red]{run.reason}[/]")
+    for k, v in summary_rows(run, spec):
+        table.add_row(k, v)
+    console.print(table)
+    console.print(f"replay: [cyan]{path}[/]")
+
+
 def _load_flight(csv: Path, mapping: str):
     from plume.flightdata.importer import load_log
 

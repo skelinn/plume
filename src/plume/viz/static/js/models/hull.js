@@ -93,20 +93,27 @@ export class Hull {
       this.group.add(new THREE.Mesh(rg, ringMat));
     }
 
-    // ---- nose (tangent ogive) + tip
-    const pts = [];
-    const N = 40;
-    for (let i = 0; i <= N; i++) {
-      const x = (i / N) * ln;
-      pts.push([Math.max(ogiveRadius(r, ln, x), 0.0005), lc + x]);
+    if (ln > 0.02 * L) {
+      // ---- nose (tangent ogive) + tip
+      const pts = [];
+      const N = 40;
+      for (let i = 0; i <= N; i++) {
+        const x = (i / N) * ln;
+        pts.push([Math.max(ogiveRadius(r, ln, x), 0.0005), lc + x]);
+      }
+      pts[N][0] = 0.0;
+      const noseMat = add(M.patchSoot(M.withRepeat(paint, 4, 1), soot, { strength: 0.25 }));
+      this.group.add(new THREE.Mesh(lathe(pts, 96), noseMat));
+      const tipR = ogiveRadius(r, ln, ln * 0.97);
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(Math.max(tipR * 1.6, 0.012), 16, 10), add(M.aluminium()));
+      tip.position.y = lc + ln * 0.975;
+      this.group.add(tip);
+    } else {
+      // ---- no nose (a stage of a multi-stage vehicle): dark closeout deck and a metal top ring
+      const deck = new THREE.Mesh(new THREE.CircleGeometry(r * 0.995, 64).rotateX(-Math.PI / 2).translate(0, L - 0.02, 0), add(M.darkMetal()));
+      this.group.add(deck);
+      this.group.add(new THREE.Mesh(place(new THREE.TorusGeometry(r * 1.0, 0.008 * D + 0.002, 6, 96), { pos: [0, L, 0], rot: [Math.PI / 2, 0, 0] }), add(M.aluminium())));
     }
-    pts[N][0] = 0.0;
-    const noseMat = add(M.patchSoot(M.withRepeat(paint, 4, 1), soot, { strength: 0.25 }));
-    this.group.add(new THREE.Mesh(lathe(pts, 96), noseMat));
-    const tipR = ogiveRadius(r, ln, ln * 0.97);
-    const tip = new THREE.Mesh(new THREE.SphereGeometry(Math.max(tipR * 1.6, 0.012), 16, 10), add(M.aluminium()));
-    tip.position.y = lc + ln * 0.975;
-    this.group.add(tip);
 
     // ---- aft lip
     const lipMat = add(M.darkMetal());

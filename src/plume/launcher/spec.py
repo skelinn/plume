@@ -146,6 +146,7 @@ class UpperGuidanceSpec(Spec):
 
 class BoostbackSpec(Spec):
     pitch_deg: float = Field(10.0, ge=-30, le=60, description="thrust elevation above horizontal")
+    max_g: float = Field(4.0, gt=0, description="throttle back above this thrust acceleration, g")
     flip_rate_deg_s: float = Field(12.0, gt=0, description="RCS flip rate limit, deg/s")
     align_deg: float = Field(15.0, gt=0, description="ignite when within this of the attitude")
     coast_before_flip: float = Field(2.0, ge=0, description="after separation, s")

@@ -52,7 +52,7 @@ export class Transport {
     this.events = [];
     replays.forEach((r, k) => {
       for (const ev of r.events || []) {
-        const m = el('i', { class: `ev ev-${ev.type} k${k}${MAJOR.has(ev.type) ? ' major' : ''}`, title: `${ev.label || ev.type}  ${fmtClock(ev.t)}` });
+        const m = el('i', { class: `ev ev-${ev.type} k${k}${MAJOR.has(ev.type) ? ' major' : ''}`, title: `${ev.vehicle ? `${ev.vehicle}: ` : ''}${ev.label || ev.type}  ${fmtClock(ev.t)}` });
         m.dataset.t = ev.t;
         m.addEventListener('pointerdown', (e) => { e.stopPropagation(); this.onSeek(ev.t); });
         this.markers.append(m);

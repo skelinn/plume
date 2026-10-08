@@ -40,7 +40,7 @@ from plume.launcher.stack import (
 )
 from plume.missions.hop import HopAutopilot, MissionWorld, mission_frame
 from plume.physics.propulsion import Engine
-from plume.physics.sim import RocketSim, quat_from_z_axis
+from plume.physics.sim import RocketSim, quat_from_z_axis, quat_mul
 from plume.recording import Recorder
 
 CONTROL_DT = 0.05
@@ -286,8 +286,6 @@ def run_launch(
         if on_frame:
             on_frame(up_f)
         if fair is not None:
-            from plume.physics.sim import quat_mul
-
             for k, q in (("a", st.quat), ("b", quat_mul(st.quat, flip))):
                 ff = _derived(f, st, z_fair, FAIRING_KEYS, mass=half_mass, phase="stacked")
                 ff["quat"] = q
@@ -392,6 +390,13 @@ def run_launch(
                 rec.record(f, force=force)
                 if on_frame:
                     on_frame(f)
+                if fl.info.get("fairing") and not halves:  # fairing still on the stage
+                    st = fl.sim.state
+                    z_top = launcher.stages[last].vehicle.geometry.length
+                    for k, q in (("a", st.quat), ("b", quat_mul(st.quat, flip))):
+                        ff = _derived(f, st, z_top, FAIRING_KEYS, mass=half_mass, phase="stacked")
+                        ff["quat"] = q
+                        tracks[f"fairing_{k}"].record(ff, force=force)
             if fl.done:
                 ended.add(vid)
         for vid, h in halves.items():
@@ -618,6 +623,58 @@ def _flatten(d: dict, prefix: str = "") -> dict:
         elif v is not None:
             out[key] = v
     return out
+
+
+def summary_rows(run: LaunchRun, spec: LaunchMissionSpec) -> list[tuple[str, str]]:
+    """Human-readable result lines (CLI table)."""
+    m = run.metrics
+    rows: list[tuple[str, str]] = []
+    s = m.get("staging")
+    if s:
+        rows.append(
+            (
+                "staging",
+                f"T+{s['t']:.0f} s at {s['altitude_m'] / 1e3:.1f} km, {s['speed_m_s']:,.0f} m/s, "
+                f"flight path {s['flight_path_deg']:.0f} deg (max q {s['max_q_pa'] / 1e3:.1f} kPa)",
+            )
+        )
+    o = m.get("orbit")
+    if o:
+        tgt = spec.orbit
+        inc_t = f"{tgt.inclination_deg:g}" if tgt.inclination_deg is not None else "-"
+        rows.append(("orbit reached", "yes" if o["reached"] else f"no ({o['result']})"))
+        rows.append(
+            (
+                "orbit",
+                f"{o['perigee_alt_km']:.1f} x {o['apogee_alt_km']:.1f} km, i = "
+                f"{o['inclination_deg']:.2f} deg (target {tgt.perigee_altitude / 1e3:g} x "
+                f"{tgt.apogee_altitude / 1e3:g} km, {inc_t} deg)",
+            )
+        )
+        rows.append(
+            (
+                "upper stage propellant left",
+                f"{o['upper_prop_left_kg']:.0f} kg ({o['upper_prop_left_pct']:.1f} %)",
+            )
+        )
+    b = m.get("booster")
+    if b:
+        rows.append(("booster", b["result"]))
+        rows.append(
+            (
+                "booster landing error",
+                f"{b['landing_error_m']:,.1f} m (radius {spec.landing_radius:g} m)",
+            )
+        )
+        if b.get("touchdown_speed_m_s") is not None:
+            rows.append(
+                (
+                    "booster touchdown",
+                    f"{b['touchdown_speed_m_s']:.2f} m/s down, {b['touchdown_horizontal_m_s']:.2f} m/s across",
+                )
+            )
+        rows.append(("booster propellant left", f"{b['prop_left_kg']:.0f} kg"))
+    return rows
 
 
 def save_launch(run: LaunchRun, out: str | Path) -> Path:

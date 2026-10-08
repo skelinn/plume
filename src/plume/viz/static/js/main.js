@@ -6,6 +6,7 @@
 //   camera=chase|ground|top|free
 //   speed=<x>  t=<seconds>  channel=<live channel>  trail=speed|phase  paused=1
 //   eng=1 (engineering overlay)  quality=high|low  info=1
+//   vehicle=<id>          multi-vehicle replays: the vehicle to follow (meta.vehicles[].id)
 //   capture=1&t0=&t1=&fps=   deterministic capture mode (see capture.js)
 
 import { el, clamp } from './util.js';
@@ -41,6 +42,7 @@ const S = {
   eng: params.get('eng') === '1',
   info: params.get('info') === '1',
   quality: initialQuality(),
+  vehicle: params.get('vehicle') || null,
 };
 
 function initialQuality() {
@@ -102,6 +104,7 @@ function syncUrl() {
   if (S.trail !== 'speed') p.set('trail', S.trail);
   if (S.eng) p.set('eng', '1');
   if (S.info) p.set('info', '1');
+  if (S.vehicle && S.replays[0]?.multi && S.vehicle !== S.replays[0].vehicleId) p.set('vehicle', S.vehicle);
   if (S.live && params.get('channel')) p.set('channel', params.get('channel'));
   history.replaceState(null, '', `?${p}`);
 }
@@ -138,6 +141,39 @@ function setQuality(q) {
   try { localStorage.setItem('plume.quality', q); } catch { /* storage unavailable */ }
 }
 
+// ------------------------------------------------------------------ multi-vehicle replays
+/** The sub-replay of vehicle `id` in replay `r` (or `r` itself). */
+function focusOf(r, id) {
+  return r.vehicles?.find((v) => v.id === id)?.replay || r;
+}
+
+function buildVehicleSeg(replays) {
+  const seg = $('veh-seg');
+  const list = replays[0]?.multi ? replays[0].followable : [];
+  seg.replaceChildren(...list.map((v, i) => el('button', { 'data-veh': v.id, title: `Follow ${v.name}${i < 9 ? ' (V cycles)' : ''}`, text: v.name })));
+  $('veh-group').hidden = list.length < 2;
+}
+
+function setVehicle(id, { quiet = false } = {}) {
+  const r0 = S.replays[0];
+  if (!r0) return;
+  const list = r0.multi ? r0.followable : [];
+  if (!list.some((v) => v.id === id)) id = r0.vehicleId;
+  S.vehicle = id;
+  manager.setFocus(id);
+  telemetry.setReplays(S.replays.map((r) => focusOf(r, id)), S.labels || []);
+  for (const b of document.querySelectorAll('#veh-seg button')) b.classList.toggle('on', b.dataset.veh === id);
+  if (!quiet) syncUrl();
+}
+
+function cycleVehicle() {
+  const r0 = S.replays[0];
+  if (!r0?.multi) return;
+  const list = r0.followable;
+  const i = list.findIndex((v) => v.id === S.vehicle);
+  setVehicle(list[(i + 1) % list.length].id);
+}
+
 // ------------------------------------------------------------------ opening replays
 async function install(replays, ids, { keepTime = false } = {}) {
   const token = ++S.token;
@@ -151,6 +187,8 @@ async function install(replays, ids, { keepTime = false } = {}) {
   if (token !== S.token) return;
   manager.setTrailMode(S.trail);
   telemetry.setReplays(replays, labels);
+  buildVehicleSeg(replays);
+  if (replays[0]?.multi) setVehicle(S.vehicle || replays[0].vehicleId, { quiet: true });
   renderLegend(replays, labels);
   transport.setReplays(replays);
   const tEnd = Math.max(...replays.map((r) => r.tEnd));
@@ -309,6 +347,10 @@ function initUi() {
     const b = e.target.closest('button[data-cam]');
     if (b) setCamera(b.dataset.cam);
   });
+  $('veh-seg').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-veh]');
+    if (b) setVehicle(b.dataset.veh);
+  });
   $('sel-a').addEventListener('change', () => {
     const id = $('sel-a').value;
     if (id === LIVE_ID) { params.set('channel', params.get('channel') || 'default'); startLive(); return; }
@@ -364,6 +406,7 @@ function onKey(e) {
   else if (k === '3') setCamera('top');
   else if (k === '4') setCamera('free');
   else if (k === 'c' || k === 'C') toggleCompare();
+  else if (k === 'v' || k === 'V') cycleVehicle();
   else if (k === 'l' || k === 'L') { if (S.live) goLive(); else startLive(); }
   else if (k === 't' || k === 'T') toggleTrail();
   else if (k === 'e' || k === 'E') setEng(!S.eng);
@@ -444,6 +487,6 @@ function closeup(target, cam, fov = 50) {
   v.rig.freeFov = fov;
 }
 
-window.plume = { S, manager, telemetry, transport, setEng, setInfo, setQuality, seek, closeup, setCamera };
+window.plume = { S, manager, telemetry, transport, setEng, setInfo, setQuality, seek, closeup, setCamera, setVehicle };
 
 boot();

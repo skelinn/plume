@@ -85,6 +85,14 @@ export class View {
 
   setCamera(mode) { this.rig.setMode(mode); }
 
+  /** Multi-vehicle replays: follow vehicle `id` (camera, HUD, engineering overlay). */
+  setFocus(id) {
+    if (!this.world) return null;
+    const f = this.world.setFocus(id);
+    this.hud.setReplay(f.replay, this.tag);
+    return f;
+  }
+
   /** Render the world at replay time t. animTime drives plume/dust animation. */
   render(t, animTime) {
     const world = this.world;
@@ -97,7 +105,7 @@ export class View {
     const cam = this.rig.update(st);
     world.layout(cam.origin, cam, animTime, { now: t0 / 1000 });
     const camera = cam.camera;
-    world.trail.setCameraInfo(camera.near, this.w * this.pixelRatio, this.h * this.pixelRatio, this.pixelRatio);
+    for (const tr of world.trails) tr.setCameraInfo(camera.near, this.w * this.pixelRatio, this.h * this.pixelRatio, this.pixelRatio);
     this.post.render(world.scene, camera, () => world.eng.render(this.renderer, camera));
 
     // pixels per metre at the rocket (for the locator marker)

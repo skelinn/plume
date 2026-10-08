@@ -28,6 +28,10 @@
       <label class="field"><span class="lbl">Replay</span><select id="sel-a" aria-label="Replay"></select></label>
       <label class="field" id="field-b" hidden><span class="lbl">vs</span><select id="sel-b" aria-label="Comparison replay"></select></label>
     </div>
+    <div class="tb-group" id="veh-group" hidden>
+      <span class="lbl hide-md">Follow</span>
+      <div class="seg" id="veh-seg" role="group" aria-label="Followed vehicle"></div>
+    </div>
     <div class="spacer"></div>
     <div class="tb-group">
       <span class="lbl hide-md">Camera</span>
@@ -89,13 +93,14 @@
         <dt>E</dt><dd>Engineering overlay: force and velocity vectors, guidance, dispersion</dd>
         <dt>I</dt><dd>Replay information</dd>
         <dt>C</dt><dd>Compare with another replay</dd>
+        <dt>V</dt><dd>Follow the next vehicle (multi-vehicle replays: stages, booster)</dd>
         <dt>L</dt><dd>Live stream / follow live</dd>
         <dt>T</dt><dd>Trail colour: speed / phase</dd>
         <dt>Q</dt><dd>Render quality: high / low</dd>
         <dt>H</dt><dd>Hide / show the interface</dd>
         <dt>Drag, wheel</dt><dd>Orbit / zoom the camera; double-click resets</dd>
       </dl>
-      <p class="fine">URL parameters: <code>?replay=&lt;id&gt;</code> <code>&amp;camera=chase|ground|top|free</code> <code>&amp;eng=1</code> <code>?compare=&lt;a&gt;,&lt;b&gt;</code> <code>?replay=live</code></p>
+      <p class="fine">URL parameters: <code>?replay=&lt;id&gt;</code> <code>&amp;camera=chase|ground|top|free</code> <code>&amp;eng=1</code> <code>?compare=&lt;a&gt;,&lt;b&gt;</code> <code>?replay=live</code> <code>&amp;vehicle=&lt;id&gt;</code></p>
     </div>
   </div>
 

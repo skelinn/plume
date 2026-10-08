@@ -299,6 +299,9 @@ class UpperStageGuidance:
         self._coef = None  # (t_ref, A, B, An, Bn)
         self.cutoff_t: float | None = None
         self.last_dir = None
+        self.throttle = 1.0
+        self.trim_time = 3.0  # s of full-thrust energy gain flown at minimum throttle
+        self.control_dt = 0.05  # flight-software cycle, s
 
     def bind(self, sim) -> None:
         """Continue with a new simulator for the same stage (e.g. after fairing jettison)."""
@@ -323,7 +326,7 @@ class UpperStageGuidance:
         g_eff = mu / rn**2 - vt * vt / rn
         g_end = mu / self.r_T**2 - self.v_T**2 / self.r_T
         eng = sim.nominal.engine
-        thrust = max(sim.engine.max_thrust(0.0), 1e-6)
+        thrust = max(sim.engine.max_thrust(0.0) * self.throttle, 1e-6)
         ve = eng.isp_vac * G0
         a_t = thrust / st.mass
         tau = st.mass * ve / thrust
@@ -374,10 +377,14 @@ class UpperStageGuidance:
                 self.phase = "burn"
                 self._event("ignition", "Upper-stage ignition")
             return 0.0, np.zeros(2), rcs, "coast"
-        # burning: cut off on energy (minus the tail-off: thrust decays with tau)
+        # burning: cut off on energy, allowing for the thrust tail-off (first-order decay
+        # with tau adds ~ a tau of speed) and the flight-software cycle (cut when the
+        # target would be crossed within the first half of the next cycle)
         _r, v = self.frame.to_inertial(st.com, st.vel_com, t)
-        tail = float(np.linalg.norm(v)) * sim.thrust / st.mass * sim.nominal.engine.throttle_tau
-        if self.energy(st) >= self.E_T - tail:
+        e_rate = float(np.linalg.norm(v)) * sim.thrust / st.mass  # dE/dt, prograde thrust
+        tail = e_rate * sim.nominal.engine.throttle_tau
+        remaining = self.E_T - tail - self.energy(st)
+        if remaining <= 0.5 * e_rate * self.control_dt:
             self.phase = "coast"
             self.cutoff_t = t
             self._event("cutoff", "SECO")
@@ -387,8 +394,12 @@ class UpperStageGuidance:
             self.cutoff_t = t
             self._event("cutoff", "Upper stage depleted")
             return 0.0, np.zeros(2), np.zeros(3), "coast"
+        # last seconds: throttle down so the cutoff lands closer to the target energy
+        e_full = float(np.linalg.norm(v)) * sim.engine.max_thrust(0.0) / st.mass
+        if remaining < e_full * self.trim_time:
+            self.throttle = sim.nominal.engine.throttle_min
         gimbal, rcs = self.att(st, axis, sim.thrust)
-        return 1.0, gimbal, rcs, "upper_burn"
+        return self.throttle, gimbal, rcs, "upper_burn"
 
 
 # ----------------------------------------------------------------------------- booster RTLS
@@ -500,4 +511,7 @@ class BoosterReturn:
             self._event("cutoff", "Boost-back cutoff")
             return 0.0, np.zeros(2), np.zeros(3), "coast"
         gimbal, rcs = self.att(st, axis, sim.thrust)
-        return 1.0, gimbal, rcs, "boostback"
+        # a nearly empty stage at full thrust would pull > 10 g: throttle to max_g
+        t_max = max(sim.engine.max_thrust(0.0), 1e-6)
+        throttle = min(1.0, self.spec.max_g * G0 * st.mass / t_max)
+        return throttle, gimbal, rcs, "boostback"

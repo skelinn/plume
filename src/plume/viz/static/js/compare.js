@@ -60,6 +60,11 @@ export class ViewManager {
     for (const v of this.views) v.setCamera(mode);
   }
 
+  /** Follow vehicle `id` in every view that has it (multi-vehicle replays). */
+  setFocus(id) {
+    for (const v of this.views) v.setFocus(id);
+  }
+
   setQuality(q) {
     this.quality = q;
     for (const v of this.views) v.setQuality(q);
@@ -71,7 +76,7 @@ export class ViewManager {
   }
 
   setTrailMode(mode) {
-    for (const v of this.views) v.world?.trail.setColorBy(mode);
+    for (const v of this.views) v.world?.setTrailMode(mode);
   }
 
   render(t, animTime) {

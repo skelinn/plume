@@ -28,7 +28,36 @@ export class Replay {
     this._fillVel(0);
     this._dn = 0;
     this._derive();
+    this._buildVehicles(data);
   }
+
+  /**
+   * Multi-vehicle replays (meta.vehicles + data.tracks): the primary vehicle is this replay's own
+   * `frames`; every other vehicle becomes a sub-replay sharing the scene.  `this.vehicles` lists
+   * {id, name, role, persist, replay} with the primary first; single-vehicle replays get one entry.
+   */
+  _buildVehicles(data) {
+    const list = Array.isArray(this.meta.vehicles) ? this.meta.vehicles : [];
+    const tracks = data.tracks || {};
+    const primary = list.find((v) => v.primary) || null;
+    this.vehicleId = primary ? primary.id : 'vehicle';
+    this.vehicles = [{ id: this.vehicleId, name: primary?.name || this.vehicle.name || 'Vehicle', role: primary?.role || 'vehicle', persist: true, replay: this }];
+    this.multi = false;
+    for (const v of list) {
+      if (v === primary || !tracks[v.id]?.frames?.t?.length) continue;
+      const meta = { ...this.meta, vehicle: v.vehicle || this.meta.vehicle, title: `${this.meta.title || this.id} / ${v.name || v.id}` };
+      delete meta.vehicles;
+      delete meta.outcome;
+      const sub = new Replay({ meta, frames: tracks[v.id].frames, events: this.events.filter((e) => !e.vehicle || e.vehicle === v.id) }, `${this.id}#${v.id}`);
+      sub.parent = this;
+      sub.vehicleId = v.id;
+      this.vehicles.push({ id: v.id, name: v.name || v.id, role: v.role || 'vehicle', persist: v.persist !== false, replay: sub });
+      this.multi = true;
+    }
+  }
+
+  /** Vehicles a user can follow (not jettisoned hardware such as fairing halves). */
+  get followable() { return this.vehicles.filter((v) => !/fairing/.test(v.role)); }
 
   /**
    * Derived per-frame columns used by the 3-D models (computed incrementally, so live runs work):
@@ -82,8 +111,20 @@ export class Replay {
   }
 
   get n() { return this.frames.t.length; }
-  get t0() { return this.n ? this.frames.t[0] : 0; }
-  get tEnd() { return this.n ? this.frames.t[this.n - 1] : 0; }
+  /** first / last frame time of this vehicle's own track */
+  get ownT0() { return this.n ? this.frames.t[0] : 0; }
+  get ownTEnd() { return this.n ? this.frames.t[this.n - 1] : 0; }
+  /** time span of the whole replay (every vehicle) */
+  get t0() {
+    let t = this.ownT0;
+    if (this.multi) for (const v of this.vehicles) if (v.replay !== this && v.replay.n) t = Math.min(t, v.replay.ownT0);
+    return t;
+  }
+  get tEnd() {
+    let t = this.ownTEnd;
+    if (this.multi) for (const v of this.vehicles) if (v.replay !== this && v.replay.n) t = Math.max(t, v.replay.ownTEnd);
+    return t;
+  }
   get source() { return this.meta.source || 'sim'; }
   get title() { return this.meta.title || this.id; }
   get vehicle() { return this.meta.vehicle; }

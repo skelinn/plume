@@ -15,6 +15,7 @@ import { Legs } from './models/legs.js';
 import { Engine } from './models/engine.js';
 import { RcsPuffs } from './models/rcs.js';
 import { HobbyAirframe, Parachute, isHobby } from './models/hobby.js';
+import { FairingHalf, isFairing } from './models/fairing.js';
 
 export class Rocket {
   /**
@@ -48,7 +49,14 @@ export class Rocket {
     };
     this.mats = Object.values(mats);
 
-    if (this.hobby) {
+    if (isFairing(V)) {
+      // jettisoned hardware (multi-vehicle replays): shell only, no engine or exhaust
+      this.fairing = new FairingHalf(V);
+      this.group.add(this.fairing.group);
+      this.parts.push(this.fairing);
+      this.plume = null;
+      this.re = 0.1;
+    } else if (this.hobby) {
       this.airframe = new HobbyAirframe(V);
       this.group.add(this.airframe.group);
       this.parts.push(this.airframe);
@@ -101,7 +109,7 @@ export class Rocket {
     this._m = new THREE.Matrix4();
   }
 
-  setQuality(q) { this.plume.setQuality(q); }
+  setQuality(q) { this.plume?.setQuality(q); }
 
   /**
    * Pose moving parts from a replay sample.
@@ -113,6 +121,7 @@ export class Rocket {
     let th = s.throttle;
     if (th === undefined) th = this.thrustMax > 0 && s.thrust !== undefined ? s.thrust / this.thrustMax : 0;
     th = Math.max(0, th || 0);
+    if (!this.plume) return 0;
     if (this.engine) {
       const [a, b] = s.gimbal || [0, 0];
       this.engine.setGimbal(a, b);
@@ -157,7 +166,7 @@ export class Rocket {
 
   dispose() {
     for (const p of this.parts) p.dispose?.();
-    this.plume.dispose();
+    this.plume?.dispose();
     this.chute?.dispose();
     for (const m of this.mats) m.dispose();
   }
