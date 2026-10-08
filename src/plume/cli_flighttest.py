@@ -22,6 +22,56 @@ flightlog_app = typer.Typer(help="Flight-computer CSV logs: inspect columns, dra
 rig_app = typer.Typer(help="Hop-test rig: test plan, system-identification flight, calibration.")
 
 
+# ----------------------------------------------------------------------------- flight logs
+@flightlog_app.command("inspect")
+def flightlog_inspect(
+    csv: Annotated[Path, typer.Argument(help="flight-computer CSV export")],
+    out: Annotated[
+        Path | None, typer.Option(help="draft mapping YAML [runs/flightlogs/<csv>_draft.yaml]")
+    ] = None,
+):
+    """Print the columns of a CSV, guess roles and units, write a draft mapping YAML."""
+    from plume.config import LogMappingSpec
+    from plume.flightdata.importer import load_log
+    from plume.flightdata.inspect import inspect_csv, write_draft
+
+    ins = inspect_csv(csv)
+    sep = {"	": "tab", ",": "comma", ";": "semicolon"}.get(ins.delimiter, repr(ins.delimiter))
+    table = Table(title=f"{csv.name}: {ins.rows:,} rows, {sep}-separated")
+    for col in ("column", "valid", "min", "max", "pad value", "guess", "unit", "decided by"):
+        table.add_column(
+            col, justify="right" if col in ("valid", "min", "max", "pad value") else "left"
+        )
+    for c in ins.columns:
+        table.add_row(
+            c.name,
+            f"{c.n_valid:,}",
+            f"{c.vmin:.6g}",
+            f"{c.vmax:.6g}",
+            f"{c.first:.4g}",
+            c.role or "[dim]-[/]",
+            c.unit or "",
+            c.why,
+        )
+    console.print(table)
+    for w in ins.warnings:
+        console.print(f"[yellow]warning:[/] {w}")
+    path = write_draft(ins, out or Path("runs") / "flightlogs" / f"{csv.stem}_draft.yaml")
+    console.print(
+        f"draft mapping: [cyan]{path}[/]  (confirm every unit, then copy it to configs/flightlogs/)"
+    )
+    try:
+        log = load_log(csv, LogMappingSpec.model_validate(ins.mapping))
+    except Exception as exc:  # the draft may be incomplete; say why
+        console.print(f"[yellow]the draft does not import yet:[/] {exc}")
+        return
+    console.print(
+        f"trial import with the draft: liftoff at raw t = {log.meta['launch_time_raw']:.2f} s, "
+        f"apogee {log.apogee:,.1f} m at T+{log.t_apogee:.1f} s, max vertical speed "
+        f"{log.velocity.max():.1f} m/s. [dim]Implausible numbers usually mean a wrong unit.[/]"
+    )
+
+
 # ----------------------------------------------------------------------------- hop rig
 @rig_app.command("plan")
 def rig_plan():
