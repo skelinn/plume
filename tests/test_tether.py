@@ -91,13 +91,13 @@ def test_undamped_rope_conserves_energy_high_fidelity():
     sim, t, e = _drop_on_rope("high", damping=0.0)
     assert t.max_tension > 0  # it bounced on the rope
     scale = sim.mp.mass * G * 1.0  # the 1 m drop
-    assert np.ptp(e) / scale < 2e-3
+    assert np.ptp(e) / scale < 1e-3  # measured ~1e-4
 
 
 def test_undamped_rope_energy_drift_small_fast_fidelity():
     # forces are held over a step in fast fidelity: only first-order accurate
     sim, _, e = _drop_on_rope("fast", damping=0.0)
-    assert np.ptp(e) / (sim.mp.mass * G) < 0.05
+    assert np.ptp(e) / (sim.mp.mass * G) < 5e-3  # measured ~4e-4 with the mid-step stretch
 
 
 def test_damped_rope_dissipates_and_settles_at_static_stretch():

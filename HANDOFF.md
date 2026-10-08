@@ -77,8 +77,8 @@ _Last updated: 2026-10-08 (evening)_
 | 1 | Design trade study | running: 4 variant campaigns (configs/dispersions/real_hop_{gimbal9,tanks105,entry1300,combined}.yaml); report via `scripts/trade_study.py` -> docs/design/trade_study.md | main. If interrupted: rerun `uv run plume mc real_hop_<variant> --workers 6` (resumable) then the script |
 | 2 | Convex landing guidance | in progress | agent branch (pushed to origin as it lands; see `git branch -r`) |
 | 3 | Ascent load relief + re-targeting | starting | same agent as 2 |
-| 4 | Test-flight programme | starting | worktree agent |
-| 5 | Hop-test-rig model | starting | same agent as 4 |
+| 4 | Test-flight programme | done on branch, awaiting merge | `worktree-agent-aed4597bee8c870f6`: docs/test_flight_programme.md, `plume flightlog inspect`, `plume predict`, `plume validate` (docs/validation/ records read by vv-report) |
+| 5 | Hop-test-rig model | done on branch, awaiting merge | same branch: hop_rig.yaml, tether model, tethered_hover / tether_catch / translation_step / free_hop, `plume rig plan` / `sysid` / `calibrate`, docs/hop_rig.md |
 | 6 | Multi-stage + orbit | starting | worktree agent |
 | 7 | Ship landing | starting | worktree agent |
 | 8 | Landing gear + soil | starting | same agent as 7 |
