@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/plume-sim/plume/actions"><img alt="CI" src="https://img.shields.io/badge/tests-passing-brightgreen"></a>
+  <a href="https://github.com/skelinn/plume/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/skelinn/plume/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.11%20%7C%203.12-blue">
   <img alt="Physics" src="https://img.shields.io/badge/physics-MuJoCo%20RK4-orange">
   <img alt="Verification" src="https://img.shields.io/badge/NASA%20check%20cases-10%2F10-brightgreen">

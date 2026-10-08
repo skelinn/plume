@@ -116,7 +116,9 @@ class LandingAutopilot:
         spare = self.sim.prop_mass - 0.6 * st.mass * (1.0 - math.exp(-1.3 * st.speed / isp_g))
         t_afford = max(spare, 0.0) * isp_g / (st.mass * g)  # hovering seconds left
         t_div = min(t_div, 0.5 * t_afford, 30.0)
-        self.h_gate = float(np.clip(0.5 * self.v_gate * t_div + 30.0, 40.0, 500.0)) if t_div > 2.0 else 0.0
+        self.h_gate = (
+            float(np.clip(0.5 * self.v_gate * t_div + 30.0, 40.0, 500.0)) if t_div > 2.0 else 0.0
+        )
 
     def _plan_decel(self, a_max: float, g: float) -> None:
         """Use a fraction of the thrust margin over gravity for the stopping profile."""

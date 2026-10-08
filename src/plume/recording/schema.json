@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/plume-sim/plume/replay.schema.json",
+  "$id": "https://github.com/skelinn/plume/replay.schema.json",
   "title": "Plume replay (v1)",
   "description": "A recorded flight (simulated or real). World frame is ENU (x east, y north, z up), SI units, angles in radians, quaternions [w, x, y, z] rotating body to world. The body frame has +z along the vehicle axis toward the nose, origin at the base of the hull.",
   "type": "object",

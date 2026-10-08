@@ -62,7 +62,7 @@ COPERNICUS_LICENCE = (
 )
 VERTICAL_DATUM = "EGM2008 geoid (orthometric height, m above mean sea level)"
 HORIZONTAL_DATUM = "WGS 84"
-USER_AGENT = "plume-terrain/0.1 (+https://github.com/plume-sim)"
+USER_AGENT = "plume-terrain/0.1 (+https://github.com/skelinn/plume)"
 MAX_TILE_BYTES = 120_000_000  # a GLO-30 tile is ~10-40 MB; refuse anything absurd
 MAX_MOSAIC_CELLS = 80_000_000  # ~320 MB float32; ask for a coarser grid beyond this
 _ARCSEC_M = 30.87  # metres per arc-second of latitude

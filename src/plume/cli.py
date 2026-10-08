@@ -83,7 +83,9 @@ def land(
     episodes: int = 1,
     run_dir: Annotated[Path, typer.Option(help="PPO run directory")] = Path("runs/ppo_landing"),
     save: Annotated[Path | None, typer.Option(help="replay path (first episode)")] = None,
-    fidelity: Annotated[str, typer.Option(help="fast | high (aero database, actuator dynamics)")] = "fast",
+    fidelity: Annotated[
+        str, typer.Option(help="fast | high (aero database, actuator dynamics)")
+    ] = "fast",
 ):
     """Fly the landing task with the PID/guidance autopilot or a trained PPO agent."""
     from plume.envs.landing_env import AutopilotPolicy, LandingEnv

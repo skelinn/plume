@@ -22,10 +22,10 @@ jobs:
         run: |
           uv venv
           uv pip install torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install -e ".[rl,viz,dev]"
+          uv pip install -e ".[rl,viz,dev,hifi,geo]"
       - name: Lint
         run: |
           uv run --no-sync ruff check src tests scripts
           uv run --no-sync ruff format --check src tests scripts
       - name: Test
-        run: uv run --no-sync pytest -q -n auto -m "not slow"
+        run: uv run --no-sync pytest -q -n auto -m "not slow and not network"
