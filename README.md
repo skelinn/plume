@@ -1,113 +1,141 @@
-<h1 align="center">🚀 Plume</h1>
+<h1 align="center">Plume</h1>
 
 <p align="center">
-  <b>An open-source 6-DOF simulator for reusable cargo rockets</b><br>
-  powered landing · reinforcement learning · 750 km point-to-point cargo hops · sim-to-real calibration from hobby flight logs
+  <b>An open-source 6-DOF simulator for reusable cargo rockets, built to be checked</b><br>
+  verified physics · fidelity levels · Monte Carlo dependability · real terrain · powered landing and RL · sim-to-real calibration
 </p>
 
 <p align="center">
   <a href="https://github.com/plume-sim/plume/actions"><img alt="CI" src="https://img.shields.io/badge/tests-passing-brightgreen"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.11%20%7C%203.12-blue">
   <img alt="Physics" src="https://img.shields.io/badge/physics-MuJoCo%20RK4-orange">
+  <img alt="Verification" src="https://img.shields.io/badge/NASA%20check%20cases-10%2F10-brightgreen">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-lightgrey">
 </p>
 
 <p align="center">
-  <img src="docs/assets/hop.gif" width="49%" alt="Cargo hop ascent over procedural terrain">
-  <img src="docs/assets/hop_landing.gif" width="49%" alt="Cargo hop landing on unprepared ground">
+  <img src="docs/assets/viewer_ascent.jpg" width="49%" alt="Cargo hopper ascending, monochrome viewer UI with live telemetry">
+  <img src="docs/assets/landing_burn.jpg" width="49%" alt="Landing burn onto the landing zone">
 </p>
 <p align="center">
-  <img src="docs/assets/landing.gif" width="49%" alt="Powered landing from 3 km with the guidance autopilot">
-  <img src="docs/assets/compare.gif" width="49%" alt="Real hobby flight vs calibrated simulation, side by side">
+  <img src="docs/assets/engineering_view.jpg" width="49%" alt="Engineering view: velocity, air-relative velocity, aero force, wind and gravity vectors with angle of attack and dynamic pressure">
+  <img src="docs/assets/gridfins_closeup.jpg" width="49%" alt="Lattice grid fins deployed during descent">
 </p>
 
-Plume flies a rigid-body rocket in MuJoCo with its own gravity, atmosphere, thrust,
-gimbal, RCS, aerodynamics, wind and parachute models. It learns to land with PPO, flies
-cargo 750 km across 3-D terrain and lands it on rough ground, and fits its drag and
-thrust models to real hobby-rocket flight logs. All of it plays back in a browser viewer.
+Plume flies a rigid-body rocket in MuJoCo with its own models of:
+
+- Earth and gravity
+- atmosphere, wind and turbulence
+- aerodynamics
+- propulsion, actuators and sensors
+
+It flies cargo 750 km between real launch sites over real terrain and lands it. Every result comes with evidence for how far it can be trusted.
 
 ```bash
-uv sync --all-extras          # Python 3.11+, CUDA torch on Windows/Linux
-uv run plume hop demo_hop     # 750 km cargo hop  -> runs/hop_demo_hop.plume.json.gz
-uv run plume viz              # open http://localhost:8765 and pick the replay
+uv sync --all-extras                       # Python 3.11+, CUDA torch on Windows/Linux
+uv run plume hop demo_hop                  # 750 km cargo hop, fast fidelity (~1 min)
+uv run plume hop real_hop --fidelity high  # Spaceport America -> Burns Flat, verification-grade models (~5 min)
+uv run plume mc demo_hop                   # Monte Carlo: success probability, landing dispersion, sensitivity
+uv run plume vv-report                     # verification report: tests, NASA check cases, model status
+uv run plume viz                           # viewer at http://localhost:8765
 ```
 
 ---
 
 ## Contents
 
+- [Dependable, not just realistic](#dependable-not-just-realistic)
 - [What's inside](#whats-inside)
 - [Quick tour](#quick-tour)
+- [Monte Carlo: how dependable is the cargo hop?](#monte-carlo-how-dependable-is-the-cargo-hop)
 - [Results: PID vs RL](#results-pid-vs-rl)
-- [Physics model](#physics-model)
+- [Physics models](#physics-models)
 - [Idle-aware training](#idle-aware-training)
 - [Configuration](#configuration)
 - [Architecture](#architecture)
 - [Limitations](#limitations)
 
+## Dependable, not just realistic
+
+No simulator is "the most realistic possible", and realism alone doesn't make results dependable. Plume rests on three separate kinds of evidence:
+
+| | What it answers | Status |
+|---|---|---|
+| **Verification** | Is the math implemented correctly? | 136 automated checks: analytic orbits, energy integrals, convergence, published tables, NASA reference trajectories. `plume vv-report` writes [docs/vv/report.html](docs/vv/report.html). |
+| **Validation** | Do the models match reality? | **Pending real data.** The pipeline is ready: flight-log import, calibration, and aero database importers for RASAero, OpenRocket, DATCOM and CSV. No model is marked validated until real flight or test data has been compared. |
+| **Quantified uncertainty** | How likely is the mission to succeed? | `plume mc` samples engine, mass, aero, actuator and weather uncertainty. It reports success probability with a confidence interval, the landing dispersion, failure modes and the parameters that drive misses. |
+
+Key verification results:
+
+- **NASA NESC atmospheric check cases 1–10** (NASA/TM-2015-218675) all pass against the published reference trajectories of NASA's own simulation tools. The cases include a dropped sphere on a rotating WGS-84 Earth with J2, drag and wind, a tumbling brick, and a cannonball. Errors are about 0.1–0.2 of the allowed tolerance, which is twice the spread between the NASA tools.
+- **High-fidelity integration** evaluates every force at each RK4 stage. It converges at second order or better, and the default 5 ms step is within 1 cm of the converged answer after 30 s of tumbling flight.
+- **Environment:** U.S. Standard Atmosphere 1976 to 1000 km and the NRLMSISE-00 reference case are reproduced. MIL-F-8785C turbulence matches its variance and correlation targets.
+- **Aerodynamic database:** generated coefficients are checked against digitised NASA wind-tunnel data (TN D-6996). Normal-force rms error is 11 % at angles of attack of 15–105°; details are in [docs/models/aero.md](docs/models/aero.md).
+
+### Fidelity levels
+
+| | `fast` (default) | `high` |
+|---|---|---|
+| Earth | flat, or non-rotating sphere | WGS-84 ellipsoid, rotating, J2–J6 gravity |
+| Integration | forces held per step | forces re-evaluated at every RK4 stage |
+| Atmosphere | US76 | US76 to 1000 km, NRLMSISE-00, or radiosonde soundings |
+| Wind | shear, gusts, first-order turbulence | forecast/sounding profiles, MIL-F-8785C Dryden or von Kármán turbulence |
+| Aerodynamics | strip theory with Mach tables | 6-component database (Mach, α 0–180°, Reynolds) with grid-fin transonic choking, retro-propulsion and heating; legs stowed in flight |
+| Actuators | first-order | second-order gimbal with delay and backlash, ignition delay, RCS pulse-width modulation with minimum impulse bit |
+| Flight software sees | true state | navigation estimate: IMU, GNSS, baro and radar altimeter fused by a 15-state EKF |
+| Speed | RL and fast iteration | about 3–5× slower |
+
 ## What's inside
 
 | | |
 |---|---|
-| **6-DOF physics core** | MuJoCo rigid body (RK4, 200 Hz) with Plume force models: flat or spherical gravity, U.S. Standard Atmosphere 1976, throttleable liquid engines (Isp vs. back-pressure, throttle lag, ignition limits) and solid thrust curves (RASP `.eng`), two-axis gimbal, cold-gas RCS with duty-cycle allocation, slender-body strip-theory aero plus fins, wind shear, turbulence and gusts, parachutes, launch rail. Propellant depletes mid-step (2nd-order accurate) and moves the CG. |
-| **Validated** | Conservation tests: mechanical energy (10⁻⁶), linear and angular momentum, mass and total impulse (exact), Tsiolkovsky Δv (10⁻⁴), drag work, variable-mass work-energy. Atmosphere is checked against the 1976 tables, and 3-DOF against 6-DOF. |
-| **Landing environment** | `Plume/Landing-v0` (Gymnasium) with a four-stage curriculum: 30 m drops up to 4 km descents at terminal velocity in gusty wind. |
-| **Guidance autopilot** | Hoverslam stopping profile, ZEM guidance, aero-aware thrust and attitude allocation with gimbal/RCS trim limits, wind-forecast disturbance observer, rate-limited cascaded attitude control. |
-| **PPO agent** | Stable-Baselines3 with a hybrid CPU-rollout / CUDA-update PPO and a multi-env subprocess VecEnv (~5k steps/s on 8 cores). Resumable, curriculum-promoting, and idle-aware: it pauses while you game. |
-| **Cargo hops** | Point-to-point missions over heightmap terrain on a curved Earth. Ascent planning, kick-and-hold gravity turn, MECO from a drag- and wind-aware impact predictor, steered entry burn, aero descent, landing on unprepared ground (MuJoCo heightfields with rocks). Scored on accuracy, fuel, cargo g-load and time. |
-| **Real flight data** | Import any hobby flight-computer CSV through a YAML column mapping. A Kalman/RTS filter fuses baro and accelerometer, and least squares fits drag, motor impulse, burn time and parachute size. Overlay plots, calibrated vehicle YAML. |
-| **Viewer** | Three.js in the browser, no build step. Rocket with gimballing engine and plume shader, terrain, trails, pads/targets, live telemetry, replay scrubbing, chase/ground/top/free cameras, live streaming from running sims, side-by-side real vs sim. |
+| **6-DOF physics core** | MuJoCo rigid body (RK4, 200 Hz) with Plume force models: throttleable liquid engines and solid thrust curves, two-axis gimbal, cold-gas RCS, aerodynamics, grid fins, wind, parachutes, launch rail. Propellant depletes mid-step and moves the CG. |
+| **Real terrain** | Copernicus DEM GLO-30 (30 m, global, free) fetched and cached with `plume terrain fetch`. Mission sites are given as latitude/longitude, with hazard maps for slope and roughness at landing zones. |
+| **Cargo hops** | Point-to-point missions with an ascent planner, gravity turn, MECO from a drag-aware impact predictor, steered entry burn, aero descent with grid fins, and a landing burn on unprepared ground. Missions are scored on accuracy, fuel, cargo g-load and time. Divert-limit logic chooses a safe landing when the pad is out of reach. |
+| **Monte Carlo** | Dispersion files, parallel resumable runs (low priority, pausing while you game), Wilson intervals, CEP and 99 % ellipses, Spearman sensitivity, an HTML report, and a dispersion overlay in the viewer. |
+| **Landing environment** | `Plume/Landing-v0` (Gymnasium) with a four-stage curriculum, a PID/guidance baseline and PPO (Stable-Baselines3, CUDA). |
+| **Real flight data** | Flight-computer CSV import through a YAML column mapping, a Kalman/RTS filter, least-squares calibration of drag, impulse and parachute size, and real-vs-sim overlays. |
+| **Viewer** | Monochrome interface with a physically based 3-D scene: HDR, sky scattering, volumetric exhaust with shock diamonds, and procedural models built from the vehicle YAML (lattice grid fins, carbon legs, regeneratively cooled bell). It adds an engineering view, model provenance, live streaming, and a real-vs-sim compare mode. |
 
 ## Quick tour
 
-### 1 · Scripted flights in the physics core
+### 1 · Cargo hop: 250 kg over 750 km
 
 ```bash
-uv run plume info lander_small                         # derived mass, T/W, delta-v
-uv run plume sim lander_small --script hop_test        # lift off, translate 60 m, land
-uv run plume sim lander_small --script hop_test --wind 8 --gusts 5 --live   # watch it live in `plume viz`
+uv run plume hop demo_hop                       # fast fidelity
+uv run plume hop real_hop --fidelity high       # real sites and terrain, every high-fidelity model
 ```
 
-### 2 · Powered landing: PID/guidance vs PPO
+<p align="center">
+  <img src="docs/assets/hop.gif" width="49%" alt="Cargo hop ascent">
+  <img src="docs/assets/hop_landing.gif" width="49%" alt="Cargo hop landing burn and touchdown">
+</p>
+
+`real_hop` flies from Spaceport America, New Mexico, to Burns Flat, Oklahoma: 761 km on Copernicus terrain. The world frame is East-North-Up at the pad on a rotating WGS-84 Earth. The flight software flies on its navigation estimate (EKF position error up to 3–5 m). Planning uses the nominal vehicle and the forecast wind, while the simulator flies the truth.
 
 ```bash
-uv run plume land --controller pid --stage full_descent --seed 3       # one episode -> replay
-uv run plume train --when-idle                                         # curriculum PPO, pauses for games
-uv run plume train --status                                            # progress, stage, why it is paused
-uv run plume land --controller ppo --stage full_descent
-uv run plume bench                                                     # results table below
+uv run plume terrain fetch --site 32.990,-106.986 --site2 35.335,-99.225 --radius-km 60 --resolution 500 --out data/terrain/my_route.yaml
 ```
 
-The agent outputs **throttle and a thrust-axis tilt**. The same attitude controller that
-serves the PID baseline turns that into gimbal and RCS commands, so the two controllers
-differ only in their guidance. (`action_mode: direct` hands raw gimbal and RCS to the agent.)
+<p align="center"><img src="docs/assets/real_terrain_info.jpg" width="80%" alt="High-fidelity real-terrain hop with the replay information panel: fidelity, models, outcome"></p>
 
-### 3 · Cargo hop: 250 kg over 749.5 km
+### 2 · Dependability analysis
 
 ```bash
-uv run plume hop demo_hop
+uv run plume mc demo_hop --workers 8            # 200 runs, about 25 min on 8 cores; docs/mc/demo_hop_fast.html
+uv run plume mc real_hop --workers 8            # high fidelity
+uv run plume vv-report                          # docs/vv/report.html
 ```
 
-```
-                     demo_hop: Pad A -> Site B
- result           | landed on target
- landing error    | 3.1 m (radius 50 m)
- fuel used / left | 6,718 / 82 kg
- max cargo load   | 5.56 g (limit 6 g)
- flight time      | 8.7 min
- apogee           | 160 km
- touchdown        | 0.68 m/s down, 0.58 m/s across, 0.5 deg slope
+### 3 · Powered landing: PID/guidance vs PPO
+
+```bash
+uv run plume land --controller pid --stage full_descent --seed 3
+uv run plume train --when-idle                  # curriculum PPO, pauses for games and heavy GPU use
+uv run plume bench
 ```
 
-The flight plan: rise, pitch kick, kick-and-hold, then gravity turn. MECO comes when the
-predicted impact point (drag, forecast wind and the planned entry burn all included)
-reaches the target. The vehicle then flips engine-first and runs a g-limited entry burn,
-steered and extended to null the predicted miss. Engine off through the aero descent,
-then a hoverslam landing burn onto a rocky, sloping landing zone. Try
-`--cargo 400`, or edit `configs/missions/demo_hop.yaml` (sites, wind, g-limit, target
-radius, scoring weights).
-
-<p align="center"><img src="docs/assets/hop_top.gif" width="70%" alt="Top-down view of the whole hop"></p>
+<p align="center"><img src="docs/assets/landing.gif" width="60%" alt="Powered landing from a 3 km descent with the guidance autopilot"></p>
 
 ### 4 · Real flight data and sim-to-real calibration
 
@@ -116,25 +144,9 @@ uv run plume import-log data/flights/sample_flight.csv --mapping generic_altimet
 uv run plume calibrate data/flights/sample_flight.csv --mapping generic_altimeter
 ```
 
-The bundled sample logs are synthetic "real" flights. A *6-DOF* truth model flew them
-with a different drag, a weaker, longer motor burn and a smaller parachute, on a rail in
-gusty wind, through noisy, biased, quantised sensors. Fitting the *3-DOF* model recovers
-the truth:
+<p align="center"><img src="docs/assets/compare.gif" width="60%" alt="Real hobby flight vs calibrated simulation, side by side"></p>
 
-| parameter | truth | flight A (ms/ft/g + GPS) | flight B (s/m/m·s⁻² CSV) |
-|---|---:|---:|---:|
-| drag scale | 1.22 | 1.25 | 1.23 |
-| total impulse scale | 0.94 | 0.937 | 0.942 |
-| burn-time scale | 1.07 | 1.069 | 1.073 |
-| parachute Cd·A (m²) | 0.47 | 0.49 | 0.47 |
-| **apogee error** | | **+134 m → −1.4 m** | **+124 m → −0.7 m** |
-
-<p align="center"><img src="docs/assets/calibration_overlay.png" width="70%" alt="Altitude, velocity and acceleration: log vs nominal vs calibrated simulation"></p>
-
-For your own logger, copy `configs/flightlogs/generic_altimeter.yaml` and set the column
-names and units (`ms`/`s`, `ft`/`m`, `g`/`m/s2`, `deg/s`/`rad/s`, raw or gravity-removed
-accelerometer, optional gyro and GPS). Then open both replays side by side in the viewer:
-`?compare=real_<log>.plume.json.gz,sim_<log>.plume.json.gz`.
+The bundled logs are synthetic "real" flights. A 6-DOF truth model with different drag, motor and parachute flew them through noisy, biased sensors. Calibration recovers the truth to within 1–3 % and cuts the apogee error from +134 m to −1.4 m.
 
 ### 5 · Viewer
 
@@ -142,13 +154,52 @@ accelerometer, optional gyro and GPS). Then open both replays side by side in th
 
 | key | action |
 |---|---|
-| Space, ← → | play/pause, step (Shift: 1 s) |
+| Space, ← → | play/pause, step |
 | 1 2 3 4 | chase, ground, top-down, free camera |
+| E | engineering view: force and velocity vectors, α/β, q, Mach, predicted impact, dispersion ellipse |
+| I | replay information: fidelity, models, outcome |
+| Q | rendering quality |
 | C / L | compare two flights / live stream |
-| `[` `]` | playback speed (0.25× to 50×) |
 
-The viewer also takes URL parameters: `?replay=`, `?compare=a,b`, `?camera=`, `?t=`, and
-`?capture=1` for frame-exact GIF capture (`scripts/make_gifs.py`).
+## Monte Carlo: how dependable is the cargo hop?
+
+This is the honest answer for today's flight software on the 8.3 t cargo hopper.
+
+The run below uses `demo_hop` at fast fidelity, 200 runs, with the dispersions in `configs/dispersions/demo_hop.yaml`:
+
+- **Engine:** thrust 1.5 %, Isp 0.5 %, misalignment 0.15°
+- **Mass:** dry mass 1 %, CG 5 cm, cargo 2 %
+- **Aerodynamics:** axial force 10 %, grid fins 15 %
+- **Weather:** wind 2.5 m/s and 30° error against the forecast, gusts up to 6 m/s, temperature ±6 K
+
+<!-- MC:START -->
+| version | mission success (95 % CI) | vehicle recovered intact | CEP50 | change |
+|---|---:|---:|---:|---|
+| v1 | 11.5 % (7.8–16.7 %) | 69 % | 243 m | first campaign |
+| v2 | 19.0 % (14.2–25.0 %) | 74 % | 234 m | kick-hold fix (crosswind lofting), g-limited predictor, drag estimation |
+| v4 | 19.0 % (14.2–25.0 %) | 78 % (72–83 %) | 238 m | divert-limit safe landing instead of chasing an unreachable pad |
+
+_Mission success = cargo on the 50 m target. Vehicle recovered = landed intact anywhere. Same 200 seeded draws in every version. Report: [docs/mc/demo_hop_fast.html](docs/mc/demo_hop_fast.html)._
+<!-- MC:END -->
+
+<p align="center"><img src="docs/assets/dispersion_overlay.jpg" width="70%" alt="Landing dispersion ellipse drawn in the viewer's top-down engineering view"></p>
+
+What the analysis found (details in [docs/models/guidance.md](docs/models/guidance.md)):
+
+- **Terminal divert authority is the weak point.** Near terminal velocity, aerodynamics outweighs the low-throttle thrust, so the landing burn cannot fly out a few hundred metres of miss. Body lift in the unpowered descent is small. The fix is a powered-descent guidance redesign (convex-optimisation landing burn) and more lateral authority.
+- **What drives misses** (Spearman ρ with miss distance, 200 runs):
+  - wind speed 0.52, by far the strongest
+  - engine misalignment −0.20
+  - cargo mass 0.19
+  - temperature −0.16
+  - throttle lag −0.14
+  - drag coefficient 0.13
+
+  Individual high-drag draws still move the impact point by kilometres after the entry burn, so aero coefficients should be pinned down to a few percent (wind tunnel, CFD, then `plume calibrate` on flight data).
+- **The propellant margin is about 2–3 %.** Size the tanks to the Monte Carlo 99th percentile, not the nominal flight.
+- **Wind:** success falls from about 44 % in near-calm air to 0 % above 8 m/s.
+
+The simulator's job is to expose these problems before hardware does.
 
 ## Results: PID vs RL
 
@@ -156,71 +207,50 @@ The viewer also takes URL parameters: `?replay=`, `?compare=a,b`, `?camera=`, `?
 _200 seeded episodes per stage and controller; ± is the 95% interval. Fuel, error and touchdown speed are averaged over successful landings._
 
 | Stage | Controller | Success rate | Fuel used (kg) | Landing error (m) | Touchdown speed (m/s) |
-|---|---|---:|---:|---:|---:|
+|---|---|---|---:|---:|---:|
 | hop_drop | PID / guidance | **100%** ± 0 | 47.4 | 2.36 | 0.79 |
 | low_descent | PID / guidance | **94%** ± 3 | 98.5 | 3.84 | 0.75 |
 | mid_descent | PID / guidance | **86%** ± 5 | 163.4 | 2.97 | 0.75 |
 | full_descent | PID / guidance | **42%** ± 7 | 227.9 | 3.71 | 0.77 |
 <!-- RESULTS:END -->
 
-The stages run from a 30–80 m drop to a 2.5–4 km descent at 110–170 m/s with 2–10 m/s
-wind, gusts and turbulence. A landing counts only if the vehicle touches down under
-2 m/s vertical and 1 m/s horizontal, comes to rest upright (< 10°) and is inside the
-10 m pad.
+The stages run from a 30–80 m drop to a 2.5–4 km descent at 110–170 m/s in 2–10 m/s wind with gusts. A landing counts if touchdown is under 2 m/s vertical and 1 m/s horizontal, the vehicle comes to rest upright, and it is inside the 10 m pad. PPO rows appear once the idle-aware trainer has finished its 50M-step curriculum; `plume bench` regenerates the table.
 
-> **PPO rows:** they appear here once the curriculum agent has trained. The idle-aware
-> trainer (`plume train --when-idle`) reruns this benchmark and rewrites the table when
-> it reaches its 50M-step budget. `plume bench` regenerates it at any point from the
-> latest checkpoint. The PID baseline's weak spot is the full descent: without grid fins
-> its sideways authority at high dynamic pressure is small, and most failures are pad
-> misses after gusts.
+## Physics models
 
-## Physics model
+Each model has a page in [docs/models/](docs/models/README.md) covering its equations, sources, assumptions, validity range, uncertainty and verification status:
 
-Each 200 Hz step: engine and RCS state advance → the mass, CG and inertia of the welded
-"wet" body are set to their **mid-step** values (keeping the dry body's frame fixed keeps
-MuJoCo's collision bounding volumes valid) → gravity (at the mid-step position), thrust,
-RCS, aero, parachute and wind forces are applied through `xfrc_applied` → `mj_step`
-(RK4) → propellant is depleted.
+| model | page |
+|---|---|
+| Earth, frames, gravity, rotating-frame dynamics, integration | [earth.md](docs/models/earth.md) |
+| Atmosphere, soundings, wind, MIL-F-8785C turbulence | [atmosphere.md](docs/models/atmosphere.md) |
+| Aerodynamic database and generator | [aero.md](docs/models/aero.md) |
+| Propulsion and actuators | [propulsion.md](docs/models/propulsion.md) |
+| Mass properties | [mass.md](docs/models/mass.md) |
+| Sensors and navigation | [navigation.md](docs/models/navigation.md) |
+| Real terrain | [terrain.md](docs/models/terrain.md) |
+| Cargo-hop guidance, plus Monte Carlo findings | [guidance.md](docs/models/guidance.md) |
 
-- **Aerodynamics**: axial force from Mach tables (separate nose-first and engine-first),
-  plus crossflow drag integrated over strips along the hull. Each strip sees its own
-  `ω × r` velocity, so centre-of-pressure moments and pitch damping come out without
-  extra coefficients, and the model can only remove energy. Fins add a linear normal force.
-- **Engine**: thrust `= ṁ·Isp_vac·g0 − p_amb·A_e` (exit area from the sea-level Isp),
-  first-order throttle lag, gimbal angle/rate limits, finite ignitions.
-- **Curved Earth** (hops): non-rotating inverse-square gravity in a tangent frame at the
-  launch site; terrain heights sit above the sphere through an azimuthal-equidistant map;
-  forecast wind is rotated into the local horizontal.
-
-Run `uv run pytest -q -n auto` (~3 min) for the full suite. It covers conservation laws,
-models, the environment, autopilot, multiprocessing VecEnv, PPO resume/stop, idle
-detection, missions (including the full 750 km hop), flight-data import and calibration,
-and the viewer server.
+`uv run pytest -q -n auto` runs the full suite (about 4 min), and `uv run pytest -m vv` runs the verification set.
 
 ## Idle-aware training
 
 ```bash
-uv run plume train --when-idle    # leave it running; it trains whenever the PC is idle
+uv run plume train --when-idle    # trains whenever the PC is idle
 uv run plume train --status
 ```
 
-A light supervisor polls every 5 s and **pauses** training when:
+A light supervisor polls every 5 s and pauses training when:
 
-- a Steam game is running (it reads `RunningAppID` from the registry and also checks for
-  processes under any `steamapps/common`), or
-- other processes keep the GPU above 50% for 20 s (NVML, per process; training's own
-  processes are excluded), or
-- a process on your blocklist is running (`configs/rl/idle_trainer.yaml`).
+- a Steam game is running (it reads `RunningAppID` and watches `steamapps/common` processes);
+- other processes keep the GPU above 50 % for 20 s;
+- a process on your blocklist is running.
 
-Pausing checkpoints the model and exits the worker, which frees VRAM and CPU. Training
-resumes after 5 idle minutes and accumulates toward 50M steps across sessions. When it
-finishes, it writes the benchmark into this README. To start it automatically at logon,
-run `scripts/install_idle_trainer.ps1` (`-Remove` uninstalls it).
+Pausing checkpoints the model and frees VRAM; training resumes after 5 idle minutes. Monte Carlo campaigns use the same detector and run at below-normal priority.
 
 ## Configuration
 
-Everything is YAML with strict validation, so typos are errors. A vehicle looks like this:
+Everything is strictly validated YAML. A vehicle looks like this:
 
 ```yaml
 name: lander_small
@@ -232,67 +262,59 @@ tanks:
 engine: {type: liquid, thrust_vac: 40000, isp_vac: 300, isp_sl: 275,
          throttle_min: 0.3, gimbal_max_deg: 8, gimbal_rate_deg_s: 25}
 rcs: {thrust: 300, isp: 70, propellant: 25, z: 8.5, pods: 4}
-aero: {stations: 10}      # Mach tables have sensible defaults
+aero: {stations: 10}          # model: auto | strip | database
+sensors: {imu: {gyro_arw_deg_rt_h: 0.125}, gnss: {sigma_h_m: 1.5}}
+```
+
+A world sets the fidelity and environment:
+
+```yaml
+world:
+  fidelity: high                      # fast | high
+  gravity: wgs84                      # flat | spherical | wgs84 (set automatically for high-fidelity missions)
+  atmosphere_model: {model: nrlmsise00, epoch: "2025-06-21T15:00:00Z", f107: 150, ap: 4}
+  wind: {speed: 5, from_deg: 250, turbulence_severity: light, profile: null}   # profile: sounding CSV
+  navigation: auto                    # auto | truth | ekf
 ```
 
 | preset | what |
 |---|---|
-| `configs/vehicles/lander_small.yaml` | 2.3 t VTVL test lander used for the landing task |
-| `configs/vehicles/cargo_hopper.yaml` | 8.3 t reusable cargo hopper: 250 kg over ~750 km |
-| `configs/vehicles/hobby_rocket.yaml` | 66 mm three-fin rocket on a 29 mm H motor with a parachute |
-| `configs/envs/{landing,curriculum}.yaml` | reward weights, success criteria, curriculum stages |
-| `configs/missions/demo_hop.yaml` | sites, terrain, wind, guidance limits, scoring |
-| `configs/flightlogs/*.yaml` | CSV column mappings |
-| `configs/rl/{ppo_landing,idle_trainer}.yaml` | PPO hyperparameters, idle rules |
-
-Terrain is a 16-bit PNG (or `.npy`) plus a small YAML file giving its extent. Regenerate
-the bundled maps with `scripts/generate_terrain.py`.
+| `configs/vehicles/cargo_hopper.yaml` | 8.3 t reusable cargo hopper with grid fins: 250 kg over about 750 km |
+| `configs/vehicles/lander_small.yaml` | 2.3 t VTVL test lander for the landing task |
+| `configs/vehicles/hobby_rocket.yaml` | 66 mm three-fin rocket on a 29 mm H motor |
+| `configs/missions/{demo_hop,real_hop}.yaml` | synthetic-terrain and real-terrain cargo hops |
+| `configs/dispersions/*.yaml` | Monte Carlo uncertainty sets |
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  subgraph cfg[YAML configs]
-    V[vehicles] --- W[world / wind] --- M[missions] --- L[log mappings]
-  end
-  subgraph phys[physics]
-    S[RocketSim<br/>MuJoCo RK4 + force models] --- P[PointMassSim<br/>3-DOF, fast]
-  end
-  subgraph ctl[control]
-    A[attitude<br/>gimbal + RCS] --- G[guidance<br/>ZEM / hoverslam / allocation]
-  end
-  cfg --> phys
-  ctl --> S
-  S --> E[Plume/Landing-v0] --> R[HybridPPO<br/>curriculum, idle supervisor]
-  S --> H[cargo hop<br/>planner + autopilot + scoring]
-  P --> H
-  P --> C[calibration<br/>least squares]
-  F[flight CSV] --> I[importer + Kalman] --> C
-  S & H & I --> Rec[(replays<br/>.plume.json.gz)] --> Viz[FastAPI + three.js viewer]
-```
-
 ```
 src/plume/
-  physics/     sim (6-DOF), pointmass (3-DOF), aero, propulsion, atmosphere, gravity, wind, recovery, mjcf
-  control/     attitude, guidance, autopilot (landing)
-  envs/        landing_env (Gymnasium)          rl/   train, hybrid_ppo, multivec, idle, evaluate, benchmark
-  missions/    hop, targeting, scoring          flightdata/   importer, compare, calibrate
-  terrain/     heightmaps + procedural maps      recording/    recorder + replay JSON schema
-  viz/         FastAPI server + static three.js viewer
+  physics/     sim (6-DOF), pointmass (3-DOF), earth (WGS-84, J2-J6, rotating frame), gravity,
+               atmosphere (US76, NRLMSISE-00, soundings), wind, turbulence (MIL-F-8785C),
+               aero (strip), aerodb + aero_gen (database, generator, importers), gridfins,
+               propulsion (engine, gimbal actuator, RCS PWM), sensors, recovery, mjcf
+  control/     attitude, autopilot (landing), navigation (INS/GNSS EKF)
+  missions/    hop (planner, autopilot), targeting (impact prediction), scoring
+  analysis/    nasa_checkcases, montecarlo, vv (report)
+  terrain/     heightmaps, Copernicus DEM, hazard maps
+  envs/ rl/    Gymnasium landing env, hybrid PPO, idle supervisor, benchmark
+  flightdata/  importer, Kalman/RTS, calibration
+  recording/   replay recorder + JSON schema          viz/   FastAPI + three.js viewer
 ```
 
 ## Limitations
 
-- Non-rotating Earth. No aerothermal heating or structural loads, and no propellant slosh or jet damping.
-- Aero is slender-body strip theory with Mach tables, not CFD. There are no grid fins, so
-  high-dynamic-pressure steering on the finless vehicles is weak, as it would be in reality.
-- Calibration fits a vertical 3-DOF model, so a strongly weather-cocked or non-vertical
-  flight is absorbed into the drag scale. The reported ± values are statistical and don't
-  include model error.
-- The cargo-hopper and hobby-motor presets are representative, not models of specific
-  commercial products.
+- **Validation:** no model has been validated against real flight data yet, so every model is verified only. Treat absolute results as engineering estimates until logs, CFD or wind-tunnel data are plugged in.
+- **Aerodynamics:**
+  - Semi-empirical aero is checked only against supersonic (Mach 2.86) body data so far.
+  - Subsonic, transonic, finned-body, grid-fin and retro-propulsion data have not been compared yet.
+  - There is no aeroelasticity or structural-load model.
+- **Vehicle effects not modelled:** propellant slosh, structural bending modes, landing-gear crush stroke and soil models. The IMU is assumed at the CG.
+- **Navigation:** the onboard terrain map is assumed perfect, and there is no RTK or landing-beacon option.
+- **Geoid:** DEM heights are orthometric, the simulator uses ellipsoidal heights, and the geoid offset (tens of metres) is not applied.
+- **Flight software:** the cargo-hop guidance is a working baseline, not a dependable flight product (see the Monte Carlo section).
+- **Presets:** the vehicle presets are representative, not models of specific commercial products.
 
 ## Contributing
 
-PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Plume is MIT-licensed, and the
-vendored three.js and uPlot are MIT too.
+PRs are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Plume is MIT-licensed. The vendored three.js and uPlot are MIT, and IBM Plex is under the SIL OFL.
