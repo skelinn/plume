@@ -73,6 +73,7 @@ def test_index_and_static(env):
         "/static/js/models/legs.js",
         "/static/js/models/engine.js",
         "/static/js/models/hull.js",
+        "/static/js/models/fairing.js",
         "/static/css/style.css",
     ):
         r = client.get(path)
@@ -179,6 +180,39 @@ def test_terrain_downsample(env):
     assert h[-1, -1] == pytest.approx(125, abs=1e-3)
     # not downsampled when under the limit
     assert len(client.get("/api/terrain/ramp/heights?max_dim=512").content) == 200 * 100 * 4
+
+
+def test_multi_vehicle_replay_served(env):
+    """Multi-vehicle replays (meta.vehicles + tracks) are listed and served intact, and
+    the viewer ships the vehicle selector."""
+    client, rdir, _ = env
+    rec = _replay("Launch")
+    rec.meta["vehicles"] = [
+        {
+            "id": "upper",
+            "name": "Upper stage",
+            "role": "upper_stage",
+            "primary": True,
+            "vehicle": VEHICLE,
+        },
+        {"id": "booster", "name": "Booster", "role": "booster", "vehicle": VEHICLE},
+    ]
+    tr = rec.add_track("booster", Recorder({}))
+    for i in range(3):
+        tr.record({"t": 0.1 * i, "pos": [0, 0, 1.0], "quat": [1, 0, 0, 0]})
+    rec.event(0.1, "separation", "Stage separation", vehicle="booster")
+    rec.save(rdir / "launch.plume.json.gz")
+    rows = {r["id"]: r for r in client.get("/api/replays").json()}
+    assert rows["launch.plume.json.gz"]["title"] == "Launch"
+    data = client.get("/api/replays/launch.plume.json.gz").json()
+    assert [v["id"] for v in data["meta"]["vehicles"]] == ["upper", "booster"]
+    assert len(data["tracks"]["booster"]["frames"]["t"]) == 3
+    assert len(data["frames"]["t"]) == 5
+    assert data["events"][0]["vehicle"] == "booster"
+    html = client.get("/").text
+    assert 'id="veh-seg"' in html
+    js = client.get("/static/js/replay.js").text
+    assert "_buildVehicles" in js and "tracks" in js
 
 
 def test_live_fanout(env):

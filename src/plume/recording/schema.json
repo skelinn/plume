@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/skelinn/plume/replay.schema.json",
-  "title": "Plume replay (v1)",
+  "title": "Plume replay (v1, optionally multi-vehicle)",
   "description": "A recorded flight (simulated or real). World frame is ENU (x east, y north, z up), SI units, angles in radians, quaternions [w, x, y, z] rotating body to world. The body frame has +z along the vehicle axis toward the nose, origin at the base of the hull.",
   "type": "object",
   "required": ["format", "version", "meta", "frames"],
@@ -117,7 +117,36 @@
             "reason": { "type": "string" },
             "metrics": { "type": "object" }
           }
-        }
+        },
+        "vehicles": {
+          "type": "array",
+          "description": "Multi-vehicle replays (e.g. a launcher's stages), primary first. The primary vehicle's frames are `frames` (and meta.vehicle describes it); every other vehicle's frames are tracks[id].frames. Viewers that ignore this show the primary vehicle only.",
+          "items": {
+            "type": "object",
+            "required": ["id", "vehicle"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "role": { "type": "string", "description": "e.g. upper_stage, booster, fairing_half" },
+              "primary": { "type": "boolean" },
+              "persist": { "type": "boolean", "description": "keep drawing the vehicle at its last pose after its track ends (default true)" },
+              "attach_z": { "type": "number", "description": "hull base above the bottom of the stack while stacked, m" },
+              "t_start": { "type": "number" },
+              "t_end": { "type": "number" },
+              "vehicle": { "$ref": "#/properties/meta/properties/vehicle", "description": "as meta.vehicle; kind 'fairing_half' = a payload-fairing half (no engine)" }
+            }
+          }
+        },
+        "launcher": { "type": "object", "description": "multi-stage vehicle summary: name, stages (bottom-up), liftoff mass" }
+      }
+    },
+    "tracks": {
+      "type": "object",
+      "description": "Frames of the non-primary vehicles of a multi-vehicle replay, keyed by meta.vehicles[].id.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["frames"],
+        "properties": { "frames": { "$ref": "#/properties/frames" } }
       }
     },
     "frames": {
@@ -162,7 +191,8 @@
         "properties": {
           "t": { "type": "number" },
           "type": { "type": "string" },
-          "label": { "type": "string" }
+          "label": { "type": "string" },
+          "vehicle": { "type": "string", "description": "multi-vehicle replays: the vehicle the event belongs to (meta.vehicles[].id)" }
         }
       }
     }
