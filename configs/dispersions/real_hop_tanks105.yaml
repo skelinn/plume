@@ -1,0 +1,32 @@
+# Monte Carlo dispersions for the real-terrain cargo hop (1-sigma unless stated).
+# Paths: vehicle.<field...> sets the TRUE vehicle (guidance keeps the nominal one);
+# world.<field...> / mission.<field...> set the TRUE environment (guidance keeps the forecast).
+# Values are representative engineering tolerances for a small liquid-propellant vehicle,
+# not measured data - replace them with test-derived values as they become available.
+name: real_hop_tanks105
+description: Design trade study variant 'tanks105' of real_hop (paired draws with the baseline).
+mission: real_hop
+runs: 64
+seed: 1
+fidelity: high
+params:
+  vehicle.engine.thrust_vac:      {dist: normal, sigma: 0.015, relative: true}   # 1.5 % thrust
+  vehicle.engine.isp_vac:         {dist: normal, sigma: 0.005, relative: true}   # 0.5 % Isp
+  vehicle.engine.misalignment_deg: {dist: normal, sigma: 0.15}                   # per axis, deg
+  vehicle.engine.throttle_tau:    {dist: normal, sigma: 0.15, relative: true, clip: [0.02, 1.0]}
+  vehicle.mass.dry:               {dist: normal, sigma: 0.01, relative: true}    # 1 % dry mass
+  vehicle.mass.dry_cg_z:          {dist: normal, sigma: 0.05}                    # m
+  vehicle.cargo.mass:             {dist: normal, sigma: 0.02, relative: true}    # declared vs actual
+  vehicle.aero.cd_scale:          {dist: normal, sigma: 0.10, relative: true, clip: [0.6, 1.5]}
+  vehicle.grid_fins.cn_alpha:     {dist: normal, sigma: 0.15, relative: true, clip: [0.5, 1e9]}
+  vehicle.rcs.thrust:             {dist: normal, sigma: 0.05, relative: true}
+  world.wind.speed:               {dist: normal, sigma: 2.5, clip: [0.0, 30.0]}  # m/s vs forecast
+  world.wind.from_deg:            {dist: normal, sigma: 30.0}                    # deg vs forecast
+  world.wind.gust_max:            {dist: uniform, low: 0.0, high: 6.0}
+  world.temperature_offset:       {dist: normal, sigma: 6.0}                     # K, off-standard day
+  world.atmosphere_model.f107:    {dist: uniform, low: 70.0, high: 250.0}        # solar cycle
+  world.wind.turbulence_severity: {dist: choice, values: [light, light, light, moderate]}
+overrides:                       # +5 % propellant capacity, +15 kg tank structure
+  vehicle.tanks.0.capacity: {scale: 1.05}
+  vehicle.tanks.1.capacity: {scale: 1.05}
+  vehicle.mass.dry: {scale: 1.0121}
