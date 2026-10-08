@@ -59,7 +59,9 @@ class WindModel:
 
     @classmethod
     def from_spec(cls, spec, seed: int | None = None) -> WindModel:
-        return cls(**{k: v for k, v in spec.model_dump().items() if k in _WINDMODEL_FIELDS}, seed=seed)
+        return cls(
+            **{k: v for k, v in spec.model_dump().items() if k in _WINDMODEL_FIELDS}, seed=seed
+        )
 
     @property
     def enabled(self) -> bool:
@@ -167,7 +169,13 @@ class TableWind:
         return float(np.interp(h, self.alt, col))
 
     def mean_at(self, altitude: float) -> np.ndarray:
-        return np.array([self._interp(self.e, altitude), self._interp(self.n, altitude), self._interp(self.u, altitude)])
+        return np.array(
+            [
+                self._interp(self.e, altitude),
+                self._interp(self.n, altitude),
+                self._interp(self.u, altitude),
+            ]
+        )
 
     def at(self, altitude: float) -> np.ndarray:
         return self.mean_at(altitude)
@@ -190,7 +198,9 @@ class CompositeWind:
         self.mean.reset(seed)
         self.turbulence.reset(None if seed is None else seed + 7919)
 
-    def step(self, dt: float, altitude: float = 0.0, agl: float | None = None, v_ground=None) -> None:
+    def step(
+        self, dt: float, altitude: float = 0.0, agl: float | None = None, v_ground=None
+    ) -> None:
         self.mean.step(dt)
         mw = self.mean.mean_at(altitude)
         v_rel = (np.zeros(3) if v_ground is None else np.asarray(v_ground)) - mw

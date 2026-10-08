@@ -568,7 +568,10 @@ class RocketSim:
         self.t += dt
         if self._turb:  # MIL turbulence is a frozen field sampled along the air path
             self.wind.step(
-                dt, altitude=alt, agl=alt - self._ground_height(com), v_ground=self._to_local(com, v_com)
+                dt,
+                altitude=alt,
+                agl=alt - self._ground_height(com),
+                v_ground=self._to_local(com, v_com),
             )
         else:
             self.wind.step(dt)

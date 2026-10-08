@@ -34,10 +34,14 @@ def test_geodetic_roundtrip():
 def test_gravity_matches_potential_gradient_and_known_values():
     ep = EarthParams()
     r = np.array([4.0e6, 3.0e6, 4.2e6])
-    g, pe = zonal_gravity_ecef(r, ep)
+    g, _pe = zonal_gravity_ecef(r, ep)
     eps = 1.0
     grad = np.array(
-        [(zonal_gravity_ecef(r + eps * e, ep)[1] - zonal_gravity_ecef(r - eps * e, ep)[1]) / (2 * eps) for e in np.eye(3)]
+        [
+            (zonal_gravity_ecef(r + eps * e, ep)[1] - zonal_gravity_ecef(r - eps * e, ep)[1])
+            / (2 * eps)
+            for e in np.eye(3)
+        ]
     )
     np.testing.assert_allclose(g, -grad, rtol=1e-7)
     # WGS-84 normal gravity at the equator is 9.7803 m/s^2 *including* centrifugal (0.0339)
@@ -55,7 +59,13 @@ def _world(rotating=True, zonal=6, shape="wgs84"):
         atmosphere=False,
         ground="none",
         dt=0.01,
-        earth=EarthSpec(rotating=rotating, zonal_degree=zonal, shape=shape, origin_lat_deg=28.5, origin_lon_deg=-80.6),
+        earth=EarthSpec(
+            rotating=rotating,
+            zonal_degree=zonal,
+            shape=shape,
+            origin_lat_deg=28.5,
+            origin_lon_deg=-80.6,
+        ),
     )
 
 

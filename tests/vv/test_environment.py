@@ -10,9 +10,9 @@ import pytest
 
 from plume.config import WindSpec, WorldSpec
 from plume.physics.atmosphere import (
+    _UPPER,
     Atmosphere,
     SoundingAtmosphere,
-    _UPPER,
     read_sounding,
 )
 from plume.physics.turbulence import FT, KT, MilTurbulence, mil_parameters
@@ -125,7 +125,7 @@ def test_wind_profile_import_drives_the_sim_wind(tmp_path):
 
 
 def test_mil_low_altitude_parameters():
-    (su, sv, sw), (lu, lv, lw) = mil_parameters(20 * FT, "light")
+    (su, _sv, sw), (lu, _lv, lw) = mil_parameters(20 * FT, "light")
     assert sw == pytest.approx(0.1 * 15 * KT, rel=1e-9)  # sigma_w = 0.1 W20
     k = 0.177 + 0.000823 * 20
     assert su == pytest.approx(sw / k**0.4, rel=1e-9)
@@ -165,9 +165,7 @@ def test_mil_turbulence_statistics(model):
 
 
 def test_composite_wind_in_sim_world():
-    world = WorldSpec(
-        wind=WindSpec(speed=8.0, from_deg=270, turbulence_severity="moderate")
-    )
+    world = WorldSpec(wind=WindSpec(speed=8.0, from_deg=270, turbulence_severity="moderate"))
     w = wind_from_world(world, seed=3)
     assert isinstance(w, CompositeWind)
     vals = []

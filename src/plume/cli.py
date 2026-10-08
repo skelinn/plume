@@ -186,9 +186,7 @@ def hop(
     if streamer:
         console.print("[dim]streaming to the viewer...[/]")
     with console.status(f"flying {spec.name} (planning ascent, then ~10 min of flight)..."):
-        run = run_mission(
-            spec, seed=seed, cargo_mass=cargo, on_frame=on_frame, fidelity=fidelity
-        )
+        run = run_mission(spec, seed=seed, cargo_mass=cargo, on_frame=on_frame, fidelity=fidelity)
     if streamer:
         streamer.end(run.recorder.meta.get("outcome"))
     path = run.recorder.save(out or Path("runs") / f"hop_{spec.name}.plume.json.gz")
@@ -382,12 +380,19 @@ def info(vehicle: Annotated[str, typer.Argument()] = "lander_small"):
 
 @app.command()
 def mc(
-    dispersion: Annotated[str, typer.Argument(help="dispersion preset (configs/dispersions) or YAML")],
+    dispersion: Annotated[
+        str, typer.Argument(help="dispersion preset (configs/dispersions) or YAML")
+    ],
     runs: Annotated[int | None, typer.Option(help="override the number of runs")] = None,
-    workers: Annotated[int | None, typer.Option(help="parallel processes (default: half the cores)")] = None,
+    workers: Annotated[
+        int | None, typer.Option(help="parallel processes (default: half the cores)")
+    ] = None,
     out: Annotated[Path | None, typer.Option(help="output directory")] = None,
     idle_aware: Annotated[
-        bool, typer.Option("--idle-aware/--always", help="pause while a Steam game or heavy GPU job runs")
+        bool,
+        typer.Option(
+            "--idle-aware/--always", help="pause while a Steam game or heavy GPU job runs"
+        ),
     ] = True,
     fidelity: Annotated[str | None, typer.Option(help="override: fast | high")] = None,
 ):
@@ -407,7 +412,9 @@ def mc(
     if fidelity:
         ds = ds.model_copy(update={"fidelity": fidelity})
     out_dir = out or Path("runs") / "mc" / f"{ds.name}_{ds.fidelity}"
-    records = run_mc(ds, out_dir, workers=workers, idle_aware=idle_aware, runs=runs, log=console.print)
+    records = run_mc(
+        ds, out_dir, workers=workers, idle_aware=idle_aware, runs=runs, log=console.print
+    )
     spec = load_mission(ds.mission)
     summary = summarize(records, ds, spec.target_radius)
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
@@ -417,8 +424,13 @@ def mc(
         (out_dir / "dispersion_meta.json").write_text(json.dumps(meta))
     lo, hi = summary["success_ci95"]
     land = summary.get("landing") or {}
-    table = Table(title=f"Monte Carlo: {ds.name} ({ds.fidelity}, {summary['runs']} runs)", show_header=False)
-    table.add_row("success", f"{100 * summary['success_probability']:.1f} % (95 % CI {100 * lo:.1f}-{100 * hi:.1f} %)")
+    table = Table(
+        title=f"Monte Carlo: {ds.name} ({ds.fidelity}, {summary['runs']} runs)", show_header=False
+    )
+    table.add_row(
+        "success",
+        f"{100 * summary['success_probability']:.1f} % (95 % CI {100 * lo:.1f}-{100 * hi:.1f} %)",
+    )
     if land:
         table.add_row("CEP50 / CEP90", f"{land['cep50_m']:,.1f} / {land['cep90_m']:,.1f} m")
         a, b = land["ellipse99"]["semi_axes_m"]
@@ -426,7 +438,9 @@ def mc(
     fuel = summary["metrics"].get("fuel_remaining_kg") or {}
     if fuel:
         table.add_row("fuel remaining p1 / p50", f"{fuel['p1']:,.0f} / {fuel['p50']:,.0f} kg")
-    table.add_row("failure modes", ", ".join(f"{k} {v}" for k, v in summary["failure_modes"].items()))
+    table.add_row(
+        "failure modes", ", ".join(f"{k} {v}" for k, v in summary["failure_modes"].items())
+    )
     top = [s for s in summary["sensitivity"][:3]]
     table.add_row("top drivers", ", ".join(f"{s['param']} ({s['rho_miss']:+.2f})" for s in top))
     console.print(table)

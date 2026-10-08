@@ -297,13 +297,16 @@ class EarthGravity:
             return tr.transform(math.degrees(lon), math.degrees(lat))
         r = 6_371_008.8
         dlon = lon - self.lon0
-        c = math.sin(self.lat0) * math.sin(lat) + math.cos(self.lat0) * math.cos(lat) * math.cos(dlon)
+        c = math.sin(self.lat0) * math.sin(lat) + math.cos(self.lat0) * math.cos(lat) * math.cos(
+            dlon
+        )
         d = math.acos(max(-1.0, min(1.0, c)))
         if d < 1e-12:
             return 0.0, 0.0
         az = math.atan2(
             math.sin(dlon) * math.cos(lat),
-            math.cos(self.lat0) * math.sin(lat) - math.sin(self.lat0) * math.cos(lat) * math.cos(dlon),
+            math.cos(self.lat0) * math.sin(lat)
+            - math.sin(self.lat0) * math.cos(lat) * math.cos(dlon),
         )
         return r * d * math.sin(az), r * d * math.cos(az)
 

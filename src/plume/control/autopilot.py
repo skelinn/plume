@@ -152,7 +152,9 @@ class LandingAutopilot:
                         # engine is throttled up (and can tilt) for the whole divert; near
                         # terminal velocity drag carries the weight, so this costs little
                         h_avail = max(h - lead - 20.0, 50.0)
-                        self.a_v = float(np.clip(descent * descent / (2.0 * h_avail), 0.5, self.a_v))
+                        self.a_v = float(
+                            np.clip(descent * descent / (2.0 * h_avail), 0.5, self.a_v)
+                        )
             if wants and self.allow_ignition and sim.prop_mass > 0:
                 self.phase = "burn"
             else:

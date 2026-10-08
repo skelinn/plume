@@ -68,7 +68,10 @@ def test_sampling_is_reproducible_and_applies_paths():
         },
     )
     mission = {"world": {"wind": {"speed": 5.0, "turbulence_severity": "none"}}}
-    vehicle = {"engine": {"thrust_vac": 1000.0, "misalignment_deg": [0.0, 0.0]}, "tanks": [{"capacity": 10.0}]}
+    vehicle = {
+        "engine": {"thrust_vac": 1000.0, "misalignment_deg": [0.0, 0.0]},
+        "tanks": [{"capacity": 10.0}],
+    }
     a = sample_run(ds, 7, mission, vehicle)
     assert a == sample_run(ds, 7, mission, vehicle)
     assert a != sample_run(ds, 8, mission, vehicle)
@@ -96,7 +99,10 @@ def _fake_records(n=60, seed=0):
         recs.append(
             {
                 "run": i,
-                "values": {"vehicle.engine.thrust_vac": thrust, "world.wind.speed": float(rng.uniform(0, 9))},
+                "values": {
+                    "vehicle.engine.thrust_vac": thrust,
+                    "world.wind.speed": float(rng.uniform(0, 9)),
+                },
                 "result": {
                     "success": ok,
                     "reason": "landed" if ok else "missed_target",

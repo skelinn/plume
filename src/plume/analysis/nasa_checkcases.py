@@ -57,25 +57,54 @@ CASES: dict[int, CheckCase] = {
     1: CheckCase(1, "Dropped sphere, no drag", "sphere"),
     # (the spreadsheet lists 0 ft for the bricks; the reference trajectories start at 30,000 ft)
     2: CheckCase(2, "Tumbling brick, no damping", "brick", rates_inertial_dps=(10.0, 20.0, 30.0)),
-    3: CheckCase(3, "Tumbling brick with damping", "brick", damping=True, rates_inertial_dps=(10.0, 20.0, 30.0)),
+    3: CheckCase(
+        3,
+        "Tumbling brick with damping",
+        "brick",
+        damping=True,
+        rates_inertial_dps=(10.0, 20.0, 30.0),
+    ),
     4: CheckCase(
-        4, "Sphere, round non-rotating Earth", "sphere", shape="sphere", rotating=False, zonal=False,
-        cd=0.1, rates_inertial_dps=(10.0, 20.0, 30.0),
+        4,
+        "Sphere, round non-rotating Earth",
+        "sphere",
+        shape="sphere",
+        rotating=False,
+        zonal=False,
+        cd=0.1,
+        rates_inertial_dps=(10.0, 20.0, 30.0),
     ),
     5: CheckCase(
-        5, "Sphere, round rotating Earth", "sphere", shape="sphere", rotating=True, zonal=False,
-        cd=0.1, rates_inertial_dps=(10.0, 20.0, 30.0),
+        5,
+        "Sphere, round rotating Earth",
+        "sphere",
+        shape="sphere",
+        rotating=True,
+        zonal=False,
+        cd=0.1,
+        rates_inertial_dps=(10.0, 20.0, 30.0),
     ),
     6: CheckCase(6, "Sphere, WGS-84 rotating Earth", "sphere", cd=0.1),
     7: CheckCase(7, "Sphere, steady wind", "sphere", cd=0.1, wind="steady"),
     8: CheckCase(8, "Sphere, wind shear", "sphere", cd=0.1, wind="shear"),
     9: CheckCase(
-        9, "Cannonball eastward along the equator", "sphere", cd=0.1, alt_ft=0.0,
-        v_ned_fps=(0.0, 1000.0, -1000.0), euler_deg=(90.0, 0.0, 0.0), rates_inertial_dps=(0.0, -0.004178073, 0.0),
+        9,
+        "Cannonball eastward along the equator",
+        "sphere",
+        cd=0.1,
+        alt_ft=0.0,
+        v_ned_fps=(0.0, 1000.0, -1000.0),
+        euler_deg=(90.0, 0.0, 0.0),
+        rates_inertial_dps=(0.0, -0.004178073, 0.0),
     ),
     10: CheckCase(
-        10, "Cannonball northward along the prime meridian", "sphere", cd=0.1, alt_ft=0.0,
-        v_ned_fps=(1000.0, 0.0, -1000.0), rates_inertial_dps=(0.004178073, 0.0, 0.0),
+        10,
+        "Cannonball northward along the prime meridian",
+        "sphere",
+        cd=0.1,
+        alt_ft=0.0,
+        v_ned_fps=(1000.0, 0.0, -1000.0),
+        rates_inertial_dps=(0.004178073, 0.0, 0.0),
     ),
 }
 
@@ -184,7 +213,20 @@ class CaseResult:
     spread: dict[str, float] = field(default_factory=dict)  # max |tool - median|
 
 
-VARS = ["alt_ft", "lat_deg", "lon_deg", "vn_fps", "ve_fps", "vd_fps", "yaw_deg", "pitch_deg", "roll_deg", "p_dps", "q_dps", "r_dps"]
+VARS = [
+    "alt_ft",
+    "lat_deg",
+    "lon_deg",
+    "vn_fps",
+    "ve_fps",
+    "vd_fps",
+    "yaw_deg",
+    "pitch_deg",
+    "roll_deg",
+    "p_dps",
+    "q_dps",
+    "r_dps",
+]
 
 
 def run_case(number: int, output_dt: float = 0.5) -> pd.DataFrame:
@@ -293,7 +335,10 @@ def passed(res: CaseResult, var: str) -> bool:
 
 
 def summary_table(results: list[CaseResult]) -> str:
-    lines = ["| Case | Variable | Plume error | NASA tool spread | Pass |", "|---|---|---:|---:|:---:|"]
+    lines = [
+        "| Case | Variable | Plume error | NASA tool spread | Pass |",
+        "|---|---|---:|---:|:---:|",
+    ]
     for r in results:
         for var, err in r.errors.items():
             lines.append(

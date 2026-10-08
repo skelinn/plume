@@ -193,7 +193,10 @@ class GridFinSpec(Spec):
     max_deflection_deg: float = Field(20.0, gt=0)
     rate_deg_s: float = Field(45.0, gt=0)
     open_area_ratio: float = Field(
-        0.9, gt=0, le=1, description="lattice open area / frontal area (transonic choking, high fidelity)"
+        0.9,
+        gt=0,
+        le=1,
+        description="lattice open area / frontal area (transonic choking, high fidelity)",
     )
     deploy: Literal["always", "on_command"] = "always"
 
@@ -279,7 +282,9 @@ class GnssSpec(Spec):
     sigma_v_m: float = Field(3.0, ge=0, description="vertical position 1-sigma")
     sigma_vel_m_s: float = Field(0.05, ge=0)
     bias_correlation_s: float = Field(300.0, gt=0)
-    max_altitude_m: float | None = Field(None, description="outage above this altitude (None = never)")
+    max_altitude_m: float | None = Field(
+        None, description="outage above this altitude (None = never)"
+    )
 
 
 class BaroSpec(Spec):
@@ -387,7 +392,8 @@ class EarthSpec(Spec):
 
 class WorldSpec(Spec):
     fidelity: Literal["fast", "high"] = Field(
-        "fast", description="fast: simplified models (RL, iteration); high: verification-grade models"
+        "fast",
+        description="fast: simplified models (RL, iteration); high: verification-grade models",
     )
     gravity: Literal["flat", "spherical", "wgs84"] = "flat"
     earth: EarthSpec = Field(default_factory=EarthSpec)

@@ -17,6 +17,8 @@ pytestmark = pytest.mark.vv
 def test_nasa_atmospheric_checkcase(number):
     res = compare(number)
     failures = {
-        v: (res.errors[v], max(FLOORS[v], 2 * res.spread[v])) for v in res.errors if not passed(res, v)
+        v: (res.errors[v], max(FLOORS[v], 2 * res.spread[v]))
+        for v in res.errors
+        if not passed(res, v)
     }
     assert not failures, f"case {number} ({CASES[number].name}): error > tolerance for {failures}"

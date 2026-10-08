@@ -40,7 +40,9 @@ class ParamDispersion(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     dist: Literal["normal", "uniform", "choice"] = "normal"
-    sigma: float = Field(0.0, ge=0, description="normal: 1-sigma (absolute, or relative if relative)")
+    sigma: float = Field(
+        0.0, ge=0, description="normal: 1-sigma (absolute, or relative if relative)"
+    )
     mean: float | None = Field(None, description="normal: mean override (default: nominal value)")
     low: float | None = None
     high: float | None = None
@@ -263,7 +265,10 @@ def run_mc(
     ds_json = ds.model_dump_json()
     log(f"{len(todo)} runs to fly ({len(done)} already done), {workers} workers")
     t_start = time.time()
-    with ProcessPoolExecutor(max_workers=workers, initializer=_lower_priority) as pool, jl.open("a") as f:
+    with (
+        ProcessPoolExecutor(max_workers=workers, initializer=_lower_priority) as pool,
+        jl.open("a") as f,
+    ):
         pending = set()
         it = iter(todo)
         finished = 0
@@ -318,7 +323,12 @@ def error_ellipse(points: np.ndarray, prob: float = 0.99) -> dict:
     pts = np.asarray(points, dtype=float)
     c = pts.mean(axis=0)
     if len(pts) < 3:
-        return {"center": c.tolist(), "semi_axes_m": [0.0, 0.0], "angle_rad": 0.0, "probability": prob}
+        return {
+            "center": c.tolist(),
+            "semi_axes_m": [0.0, 0.0],
+            "angle_rad": 0.0,
+            "probability": prob,
+        }
     cov = np.cov(pts.T)
     w, v = np.linalg.eigh(cov)
     k = math.sqrt(-2.0 * math.log(1.0 - prob))  # chi-square, 2 dof
@@ -374,7 +384,8 @@ def summarize(records: list[dict], ds: DispersionSpec, target_radius: float | No
     reasons = Counter(x.get("reason", "?") for x in res)
     # touchdowns (anything that came to rest on legs, on or off target)
     td = [
-        r for r in records
+        r
+        for r in records
         if np.isfinite(r["result"].get("touchdown_vz_mps", math.nan) or math.nan)
         and r["result"].get("reason") not in ("sim_error",)
     ]
@@ -562,7 +573,7 @@ def write_report(summary: dict, records: list[dict], path: str | Path) -> Path:
     )
     html = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Monte Carlo: {s['name']}</title>
+<title>Monte Carlo: {s["name"]}</title>
 <style>
 :root{{--bg:#fff;--fg:#0a0a0a;--mute:#666;--rule:#d0d0d0}}
 @media (prefers-color-scheme: dark){{:root{{--bg:#0a0a0a;--fg:#f2f2f2;--mute:#8a8a8a;--rule:#2a2a2a}}}}
@@ -583,21 +594,21 @@ td.n{{text-align:right;font-family:"IBM Plex Mono",ui-monospace,monospace;font-v
 code{{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px}}
 .note{{color:var(--mute);font-size:12px}}
 </style></head><body><main>
-<h1>Monte Carlo: {s['name']}</h1>
-<p class="sub">mission <code>{s['mission']}</code> · fidelity {s['fidelity']} · {s['runs']} runs</p>
+<h1>Monte Carlo: {s["name"]}</h1>
+<p class="sub">mission <code>{s["mission"]}</code> · fidelity {s["fidelity"]} · {s["runs"]} runs</p>
 <div class="kpis">
-<div class="kpi"><b>{100 * s['success_probability']:.1f} %</b><span>success</span></div>
+<div class="kpi"><b>{100 * s["success_probability"]:.1f} %</b><span>success</span></div>
 <div class="kpi"><b>{100 * lo:.1f}–{100 * hi:.1f} %</b><span>95 % interval</span></div>
-<div class="kpi"><b>{_fmt(land.get('cep50_m'))} m</b><span>CEP50</span></div>
-<div class="kpi"><b>{_fmt(land.get('cep90_m'))} m</b><span>CEP90</span></div>
-<div class="kpi"><b>{_fmt((e99.get('semi_axes_m') or [None])[0])} m</b><span>99 % ellipse, major</span></div>
+<div class="kpi"><b>{_fmt(land.get("cep50_m"))} m</b><span>CEP50</span></div>
+<div class="kpi"><b>{_fmt(land.get("cep90_m"))} m</b><span>CEP90</span></div>
+<div class="kpi"><b>{_fmt((e99.get("semi_axes_m") or [None])[0])} m</b><span>99 % ellipse, major</span></div>
 </div>
 <h2>Landing dispersion at the target</h2>
 <div class="row">{_scatter_svg(s)}
 <div class="note" style="max-width:420px">Local east/north offsets of every touchdown from the
-target. Dashed circle: target radius ({_fmt(s.get('target_radius_m'), 0)} m). Solid ellipse: 99 %
-bivariate-normal fit; dotted: 50 %. Mean offset {_fmt(land.get('mean_offset_m', [0, 0])[0])} m E,
-{_fmt(land.get('mean_offset_m', [0, 0])[1])} m N.</div></div>
+target. Dashed circle: target radius ({_fmt(s.get("target_radius_m"), 0)} m). Solid ellipse: 99 %
+bivariate-normal fit; dotted: 50 %. Mean offset {_fmt(land.get("mean_offset_m", [0, 0])[0])} m E,
+{_fmt(land.get("mean_offset_m", [0, 0])[1])} m N.</div></div>
 <h2>Distributions</h2><div class="row">{hists}</div>
 <h2>Metrics (percentiles)</h2>
 <table><tr><th>metric</th><th>p1</th><th>p5</th><th>p50</th><th>p95</th><th>p99</th></tr>{rows}</table>

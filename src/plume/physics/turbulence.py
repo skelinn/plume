@@ -37,11 +37,15 @@ FT = 0.3048
 KT = 0.514444
 
 # MIL-F-8785C fig. 7: RMS turbulence (ft/s) vs altitude (ft) for probability of exceedance
-_HI_ALT_FT = np.array([500, 1750, 3750, 7500, 15000, 25000, 35000, 45000, 55000, 65000, 75000, 80000])
+_HI_ALT_FT = np.array(
+    [500, 1750, 3750, 7500, 15000, 25000, 35000, 45000, 55000, 65000, 75000, 80000]
+)
 _HI_SIGMA_FTPS = {
     "light": np.array([6.6, 6.9, 7.4, 6.7, 4.6, 2.7, 0.4, 0, 0, 0, 0, 0]),  # 1e-2
     "moderate": np.array([8.6, 9.6, 10.6, 10.1, 8.0, 6.6, 5.0, 4.2, 2.7, 0, 0, 0]),  # 1e-3
-    "severe": np.array([15.6, 17.6, 23.0, 23.6, 22.1, 20.0, 16.0, 15.1, 12.1, 7.9, 6.2, 5.1]),  # 1e-5
+    "severe": np.array(
+        [15.6, 17.6, 23.0, 23.6, 22.1, 20.0, 16.0, 15.1, 12.1, 7.9, 6.2, 5.1]
+    ),  # 1e-5
 }
 _W20_KT = {"light": 15.0, "moderate": 30.0, "severe": 45.0}
 
@@ -128,7 +132,9 @@ class MilTurbulence:
         a = np.sqrt(a2 * (2.0 * sigma**2 / tot))  # exact variance sigma^2 = sum(a^2) / 2
         return float(a @ np.cos(self._om * self.s + self._phase[k]))
 
-    def advance(self, dt: float, h_agl: float, v_air_rel: np.ndarray, mean_wind: np.ndarray) -> np.ndarray:
+    def advance(
+        self, dt: float, h_agl: float, v_air_rel: np.ndarray, mean_wind: np.ndarray
+    ) -> np.ndarray:
         """Advance the path by ``|v_air_rel| dt`` (airspeed relative to the mean wind, local
         ENU) and return the turbulence velocity (local ENU, m/s) at the new point."""
         self.s += float(np.linalg.norm(v_air_rel)) * dt

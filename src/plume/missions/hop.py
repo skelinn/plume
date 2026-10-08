@@ -153,12 +153,17 @@ class MissionWorld:
         dp, dn = [], []
         for v in vs:  # row-major: v outer, u inner
             for u in us:
-                dp.extend(np.round(self.gravity.surface_point(u, v, 0.0) - ref.surface_point(u, v), 3))
+                dp.extend(
+                    np.round(self.gravity.surface_point(u, v, 0.0) - ref.surface_point(u, v), 3)
+                )
                 dn.extend(np.round(self.gravity.surface_normal(u, v) - ref.surface_normal(u, v), 7))
         return {
-            "u0": float(us[0]), "v0": float(vs[0]),
-            "du": float(us[1] - us[0]), "dv": float(vs[1] - vs[0]),
-            "nu": n, "nv": n,
+            "u0": float(us[0]),
+            "v0": float(vs[0]),
+            "du": float(us[1] - us[0]),
+            "dv": float(vs[1] - vs[0]),
+            "nu": n,
+            "nv": n,
             "dp": [float(x) for x in dp],  # ENU metres, 3 per node
             "dn": [float(x) for x in dn],  # unit-normal residual, 3 per node
         }
@@ -282,7 +287,8 @@ class HopAutopilot:
             # (corrected later in the gravity turn), and a 3-D alignment test would then
             # time out and loft the trajectory (found by Monte Carlo).
             if (
-                float(vhat @ self.up0) <= math.cos(self.kick) + math.radians(0.5) * math.sin(self.kick)
+                float(vhat @ self.up0)
+                <= math.cos(self.kick) + math.radians(0.5) * math.sin(self.kick)
                 or t > self.rise + self.g.kick_time + 40
             ):
                 self._set_phase("gravity_turn", "Gravity turn")
@@ -690,9 +696,7 @@ def run_mission(
         k += 1
         if k % rec_every == 0:
             impact = ap.predicted_impact
-            frame = sim.frame(
-                phase, {"impact": impact if impact is not None else mw.pad_b}
-            )
+            frame = sim.frame(phase, {"impact": impact if impact is not None else mw.pad_b})
             rec.record(frame)
             if on_frame:
                 on_frame(frame)
