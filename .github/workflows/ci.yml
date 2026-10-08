@@ -20,7 +20,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install (CPU torch in CI)
         run: |
-          uv venv
+          uv venv --clear
           uv pip install torch --index-url https://download.pytorch.org/whl/cpu
           uv pip install -e ".[rl,viz,dev,hifi,geo]"
       - name: Lint
