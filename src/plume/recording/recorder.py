@@ -63,6 +63,8 @@ class Recorder:
         self.every = max(1, int(every))
         self.frames: dict[str, list[Any]] = {}
         self.events: list[dict[str, Any]] = []
+        # further vehicles of a multi-vehicle replay (id -> Recorder); see schema.json
+        self.tracks: dict[str, Recorder] = {}
         self._calls = 0
 
     def __len__(self) -> int:
@@ -84,21 +86,32 @@ class Recorder:
             if len(col) != n + 1:
                 raise ValueError(f"frame is missing column {key!r}")
 
-    def event(self, t: float, type_: str, label: str = "") -> None:
-        self.events.append({"t": round(float(t), 4), "type": type_, "label": label})
+    def event(self, t: float, type_: str, label: str = "", vehicle: str | None = None) -> None:
+        ev = {"t": round(float(t), 4), "type": type_, "label": label}
+        if vehicle is not None:
+            ev["vehicle"] = vehicle
+        self.events.append(ev)
+
+    def add_track(self, vehicle_id: str, track: Recorder) -> Recorder:
+        """Attach the frames of another vehicle (multi-vehicle replays)."""
+        self.tracks[vehicle_id] = track
+        return track
 
     def set_outcome(self, success: bool, reason: str, metrics: Mapping[str, Any] | None = None):
         clean = {k: _round(v, 4) for k, v in (metrics or {}).items()}
         self.meta["outcome"] = {"success": bool(success), "reason": reason, "metrics": clean}
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "format": FORMAT,
             "version": VERSION,
             "meta": self.meta,
             "frames": self.frames,
             "events": self.events,
         }
+        if self.tracks:
+            out["tracks"] = {k: {"frames": r.frames} for k, r in self.tracks.items()}
+        return out
 
     def save(self, path: str | Path) -> Path:
         return save_replay(self.to_dict(), path)

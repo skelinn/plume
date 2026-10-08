@@ -1,0 +1,82 @@
+# Representative small two-stage launcher (Electron / Falcon 1 class, ~23 t at liftoff)
+# with a reusable first stage that returns to the launch site (RTLS) and lands on legs.
+# It is a generic engineering model with round-number masses and engine data; it is
+# NOT a copy of any real product. Stages are listed bottom-up; each stage is a normal
+# Plume vehicle in its own body frame (z from its hull base). Stage 2 sits on top of
+# stage 1's interstage, the payload and fairing on top of stage 2.
+name: launcher_two_stage
+description: >-
+  Representative 23 t two-stage kerolox launcher, ~100 kg to a 200 x 250 km orbit with
+  the first stage returning to the launch site.
+stages:
+  - name: booster
+    reserve: 3100.0           # kg kept at MECO for boost-back, entry and landing burns
+    vehicle:
+      name: launcher_booster
+      description: Reusable first stage with grid fins and landing legs.
+      geometry: {length: 13.2, diameter: 1.6, nose_length: 0.0}   # top = open interstage
+      legs: {count: 4, span: 2.8, height: 1.3, attach_z: 2.4, footpad_radius: 0.25,
+             max_touchdown_speed: 5.0}
+      mass:
+        dry: 2100.0             # structure, 7-engine cluster, legs, grid fins, avionics
+        dry_cg_z: 4.8
+      tanks:
+        - {name: lox, capacity: 12250.0, z_bottom: 1.5, z_top: 7.1, radius: 0.78}
+        - {name: fuel, capacity: 5250.0, z_bottom: 7.3, z_top: 10.7, radius: 0.78}
+      engine:
+        type: liquid
+        thrust_vac: 370000.0    # clustered engines, flown as one gimballed thrust vector
+        isp_vac: 312.0
+        isp_sl: 282.0
+        throttle_min: 0.06      # centre engine alone, deep throttled, for the landing
+        throttle_max: 1.0
+        throttle_tau: 0.15
+        max_ignitions: 5        # ascent, boost-back, entry, landing (+1 spare)
+        gimbal_max_deg: 7.0
+        gimbal_rate_deg_s: 20.0
+        gimbal_z: 0.7
+        nozzle_radius: 0.5
+      rcs: {enabled: true, thrust: 500.0, isp: 72.0, propellant: 80.0, z: 11.8, pods: 4}
+      aero: {stations: 14}
+      grid_fins:
+        count: 4
+        z: 12.5
+        span: 0.6
+        chord: 0.5
+        depth: 0.12
+        max_deflection_deg: 20.0
+        rate_deg_s: 45.0
+        deploy: on_command      # stowed for ascent, deployed after boost-back
+  - name: upper
+    vehicle:
+      name: launcher_upper
+      description: Expendable vacuum upper stage.
+      geometry: {length: 3.6, diameter: 1.6, nose_length: 0.0}
+      legs: {count: 0}
+      mass:
+        dry: 310.0
+        dry_cg_z: 1.5
+      tanks:
+        - {name: lox, capacity: 2240.0, z_bottom: 1.1, z_top: 2.2, radius: 0.76}
+        - {name: fuel, capacity: 960.0, z_bottom: 2.3, z_top: 3.0, radius: 0.76}
+      engine:
+        type: liquid
+        thrust_vac: 36000.0
+        isp_vac: 343.0
+        isp_sl: 250.0           # vacuum nozzle (never lit at sea level)
+        throttle_min: 0.6
+        throttle_tau: 0.1
+        max_ignitions: 2
+        gimbal_max_deg: 5.0
+        gimbal_rate_deg_s: 20.0
+        gimbal_z: 0.9
+        nozzle_radius: 0.45
+      rcs: {enabled: true, thrust: 60.0, isp: 70.0, propellant: 12.0, z: 3.3, pods: 4}
+      aero: {stations: 8}
+payload: {mass: 100.0, cg_z: 0.6, length: 1.2}
+fairing:
+  mass: 60.0
+  length: 3.2
+  nose_length: 2.0
+  jettison_altitude: 105000.0
+separation: {coast: 2.0, delta_v: 1.0, ignition_delay: 3.0}

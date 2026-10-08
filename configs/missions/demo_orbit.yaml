@@ -1,0 +1,48 @@
+# Orbital launch demo: the representative two-stage launcher puts 100 kg into a
+# 200 x 250 km orbit inclined 40 deg; the first stage flies back to a landing zone
+# 1.5 km uprange of Pad A (return to launch site) and lands on its legs.
+# Run with: uv run plume launch demo_orbit
+name: demo_orbit
+description: 100 kg to 200 x 250 km at 40 deg; booster returns to LZ-1 next to Pad A.
+kind: launch
+vehicle: launcher_two_stage
+payload_mass: 100
+terrain:
+  base: demo_region
+  launch_tile: demo_pad_a
+  landing_tile: demo_lz_rtls
+# lat/lon: nominal geodetic anchor of the (synthetic) launch site, used by --fidelity high
+# and to define the inclination in fast fidelity
+launch: {name: Pad A, u: 0.0, v: 0.0, lat: 31.0, lon: -104.0}
+landing: {name: LZ-1, u: -1340.0, v: -670.0}
+landing_radius: 30.0
+orbit:
+  perigee_altitude: 200000.0
+  apogee_altitude: 250000.0
+  inclination_deg: 40.0
+ascent:
+  rise_time: 6.0
+  kick_time: 6.0
+  staging_flight_path_deg: 30.0
+  max_g: 5.0
+upper_guidance:
+  freeze_time: 6.0
+  max_off_tangent_deg: 60.0
+  coast_after_cutoff: 60.0
+boostback:
+  pitch_deg: 5.0
+  flip_rate_deg_s: 12.0
+booster_guidance:
+  cargo_g_limit: 6.0
+  entry_altitude: 55000.0
+  entry_speed: 1000.0
+  meco_bias: 400.0          # boost-back aims this far past the LZ (entry burn trims it)
+  max_divert_m: 250.0
+world:
+  gravity: spherical
+  atmosphere: true
+  ground: none
+  dt: 0.01
+  wind: {speed: 3.0, from_deg: 250, turbulence: 0.3}
+max_time: 1200
+record_every: 5
