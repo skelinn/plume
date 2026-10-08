@@ -111,13 +111,31 @@ def crush_plateau(vehicle: VehicleSpec) -> float:
     return m * (G0 + v * v / (1.5 * legs.stroke)) / max(legs.count, 1)
 
 
-def crush_curve(legs: LegsSpec, plateau: float, s: float) -> float:
-    """Crush force at stroke ``s``: linear rise from ``crush_onset`` x plateau over
-    ``elastic_stroke``, plateau, then linear densification to ``densified_ratio`` x
-    plateau at full stroke."""
+def crush_breakout(vehicle: VehicleSpec) -> float:
+    """Minimum force per leg before the core starts to crush (N): 1.2 x the fully
+    fuelled weight per leg, so a vehicle standing on its legs on the pad (cargo hop
+    launch) does not crush them (a preloaded core / break-out stage)."""
+    gas = vehicle.rcs.gas if vehicle.rcs.enabled else 0.0
+    m = vehicle.mass.dry + vehicle.cargo.mass + gas + vehicle.prop_capacity
+    return 1.2 * m * G0 / max(vehicle.legs.count, 1)
+
+
+def crush_params(vehicle: VehicleSpec) -> tuple[float, float]:
+    """(plateau force, onset fraction) honouring the break-out load."""
+    p = crush_plateau(vehicle)
+    b = crush_breakout(vehicle)
+    p = max(p, b)
+    return p, max(vehicle.legs.crush_onset, min(b / p, 1.0))
+
+
+def crush_curve(legs: LegsSpec, plateau: float, s: float, onset: float | None = None) -> float:
+    """Crush force at stroke ``s``: linear rise from ``onset`` (default ``crush_onset``)
+    x plateau over ``elastic_stroke``, plateau, then linear densification to
+    ``densified_ratio`` x plateau at full stroke."""
     s = max(s, 0.0)
+    f0 = legs.crush_onset if onset is None else onset
     if s < legs.elastic_stroke:
-        f = legs.crush_onset + (1.0 - legs.crush_onset) * s / legs.elastic_stroke
+        f = f0 + (1.0 - f0) * s / legs.elastic_stroke
     else:
         f = 1.0
     s_d = legs.densification * legs.stroke
@@ -126,12 +144,14 @@ def crush_curve(legs: LegsSpec, plateau: float, s: float) -> float:
     return plateau * f
 
 
-def crush_energy(legs: LegsSpec, plateau: float, s: float, n: int = 400) -> float:
+def crush_energy(
+    legs: LegsSpec, plateau: float, s: float, n: int = 400, onset: float | None = None
+) -> float:
     """Energy absorbed crushing the core from 0 to ``s`` (integral of the curve, J)."""
     if s <= 0:
         return 0.0
     xs = np.linspace(0.0, s, n + 1)
-    fs = np.array([crush_curve(legs, plateau, x) for x in xs])
+    fs = np.array([crush_curve(legs, plateau, x, onset) for x in xs])
     return float(np.sum(0.5 * (fs[1:] + fs[:-1]) * np.diff(xs)))
 
 
@@ -208,8 +228,8 @@ def legs_mjcf_crush(vehicle: VehicleSpec, fmt, sink: bool = True) -> tuple[list[
     legs = vehicle.legs
     geo = leg_geometry(vehicle)
     fr = legs.footpad_radius
-    plateau = crush_plateau(vehicle)
-    f0 = crush_curve(legs, plateau, 0.0)
+    plateau, onset = crush_params(vehicle)
+    f0 = crush_curve(legs, plateau, 0.0, onset)
     mh = 0.5 * legs.foot_mass if sink else legs.foot_mass
     rod = 0.35 * fr
     plastic = f'solreffriction="{SOLREF_PLASTIC}" solimpfriction="{SOLIMP_PLASTIC}" '
@@ -297,7 +317,7 @@ class LandingGear:
         self.crush = self.model_name == "crush"
         self.n = vehicle.legs.count
         self.geo = leg_geometry(vehicle) if self.n else None
-        self.plateau = crush_plateau(vehicle) if self.crush else 0.0
+        self.plateau, self.onset = crush_params(vehicle) if self.crush else (0.0, 0.0)
         self.max_load = (self.legs.max_load or 1.6 * self.plateau) if self.crush else float("inf")
         self.default_soil = soil_spec(world.soil)
         self.geom_soil: dict[int, SoilSpec] = {}
@@ -340,7 +360,7 @@ class LandingGear:
         """Reset the joint resistances (after mj_resetData)."""
         if not self.crush:
             return
-        f0 = crush_curve(self.legs, self.plateau, 0.0)
+        f0 = crush_curve(self.legs, self.plateau, 0.0, self.onset)
         for k in range(self.n):
             model.dof_frictionloss[self.s_v[k]] = f0
             if self.has_sink:
@@ -373,7 +393,9 @@ class LandingGear:
         self.sink = np.maximum(self.sink, z)
         # plastic resistances for the next step (non-recoverable: functions of the max)
         for k in range(self.n):
-            model.dof_frictionloss[self.s_v[k]] = crush_curve(legs, self.plateau, self.stroke[k])
+            model.dof_frictionloss[self.s_v[k]] = crush_curve(
+                legs, self.plateau, self.stroke[k], self.onset
+            )
             if not self.has_sink:
                 continue
             soil = self.foot_soil[k]

@@ -74,7 +74,8 @@ export class Legs {
       az.add(brackets);
       const pivot = new THREE.Group();
       pivot.position.copy(hinge);
-      pivot.add(new THREE.Mesh(frameGeo, mats.carbon), new THREE.Mesh(fitGeo, mats.metal), new THREE.Mesh(padGeo, mats.pad));
+      const pad = new THREE.Mesh(padGeo, mats.pad);
+      pivot.add(new THREE.Mesh(frameGeo, mats.carbon), new THREE.Mesh(fitGeo, mats.metal), pad);
       az.add(pivot);
       // strut: outer barrel from B, chrome piston from the leg point M (re-solved every update)
       const outer = new THREE.Mesh(new THREE.CylinderGeometry(this.strutRo, this.strutRo, 1, 14), mats.carbon);
@@ -84,12 +85,20 @@ export class Legs {
       const endB = endA.clone();
       az.add(outer, collar, piston, endA, endB);
       this.group.add(az);
-      this.items.push({ az, pivot, outer, collar, piston, endA, endB, ap });
+      this.items.push({ az, pivot, outer, collar, piston, endA, endB, ap, pad });
     }
     this.legLen = legLen;
     this._geos = [frameGeo, fitGeo, padGeo, brGeo];
     this.group.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     this.update(1);
+  }
+
+  /**
+   * Crushable-core stroke per leg (m, replay column `stroke`, high-fidelity runs): the footpad
+   * moves up along the vehicle axis by the crushed stroke (as in the physics model).
+   */
+  setStroke(stroke) {
+    for (let k = 0; k < this.items.length; k++) this.items[k].pad.position.y = stroke ? stroke[k] || 0 : 0;
   }
 
   /** @param out 0 = stowed against the hull .. 1 = deployed */

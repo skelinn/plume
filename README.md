@@ -83,6 +83,7 @@ Key verification results:
 | Atmosphere | US76 | US76 to 1000 km, NRLMSISE-00, or radiosonde soundings |
 | Wind | shear, gusts, first-order turbulence | forecast/sounding profiles, MIL-F-8785C Dryden or von Kármán turbulence |
 | Aerodynamics | strip theory with Mach tables | 6-component database (Mach, α 0–180°, Reynolds) with grid-fin transonic choking, retro-propulsion and heating; legs stowed in flight |
+| Landing legs | rigid; break above a touchdown speed | crushable-core stroke with spring/damper, soil sinkage (Bekker), leg loads, energy, tip-over margin |
 | Actuators | first-order | second-order gimbal with delay and backlash, ignition delay, RCS pulse-width modulation with minimum impulse bit |
 | Propellant | rigid, moves the CG as it drains | same, plus optional first-mode slosh per tank (spring–mass, NASA SP-106) |
 | Flight software sees | true state | navigation estimate: IMU, GNSS, baro and radar altimeter fused by a 15-state EKF |
@@ -139,6 +140,15 @@ uv run plume bench
 ```
 
 <p align="center"><img src="docs/assets/landing.gif" width="60%" alt="Powered landing from a 3 km descent with the guidance autopilot"></p>
+
+### 3b · Landing on a drone ship
+
+```bash
+uv run plume land --stage ship_landing                    # moving deck in a 2.5 m sea, rigid legs
+uv run plume land --stage ship_landing --fidelity high    # crushable legs: stroke, leg loads, tip-over margin
+```
+
+The deck heaves, pitches, rolls and wanders on station, driven by a JONSWAP sea through barge transfer functions. The vehicle gets the deck state over a delayed, noisy ship-to-vehicle link and lands relative to the moving deck. The viewer draws the barge and an ocean built from the same wave components ([ship_landing.md](docs/models/ship_landing.md)).
 
 ### 4 · Real flight data and sim-to-real calibration
 
@@ -240,6 +250,8 @@ Each model has a page in [docs/models/](docs/models/README.md) covering its equa
 | Propellant slosh | [slosh.md](docs/models/slosh.md) |
 | Sensors and navigation | [navigation.md](docs/models/navigation.md) |
 | Real terrain | [terrain.md](docs/models/terrain.md) |
+| Landing gear crush stroke, soil sinkage, tip-over margin | [landing_gear.md](docs/models/landing_gear.md) |
+| Drone ship: sea state, deck motion, landing guidance | [ship_landing.md](docs/models/ship_landing.md) |
 | Cargo-hop guidance, plus Monte Carlo findings | [guidance.md](docs/models/guidance.md) |
 
 `uv run pytest -q -n auto` runs the full suite (about 4 min), and `uv run pytest -m vv` runs the verification set.
@@ -320,7 +332,7 @@ src/plume/
   - Semi-empirical aero is checked only against supersonic (Mach 2.86) body data so far.
   - Subsonic, transonic, finned-body, grid-fin and retro-propulsion data have not been compared yet.
   - There is no aeroelasticity or structural-load model.
-- **Vehicle effects not modelled:** structural bending modes, landing-gear crush stroke and soil models. Slosh covers the first mode only. The IMU is assumed at the CG.
+- **Vehicle effects not modelled:** structural bending modes. Slosh covers the first mode only. The IMU is assumed at the CG. The landing-gear crush and soil models (high fidelity) idealise the leg linkage and use plate-sinkage soil data; the drone ship's motion comes from closed-form barge transfer functions (see their model pages).
 - **Navigation:** the onboard terrain map is assumed perfect, and there is no RTK or landing-beacon option.
 - **Geoid:** DEM heights are orthometric, the simulator uses ellipsoidal heights, and the geoid offset (tens of metres) is not applied.
 - **Flight software:** the cargo-hop guidance reaches 87.5 % success at high fidelity under the stated dispersions. It is not flight-qualified: it exceeds the cargo g-limit slightly, and the dispersion bounds are representative rather than measured.

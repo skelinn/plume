@@ -12,6 +12,7 @@ from plume.constants import G0
 from plume.physics.gear import (
     crush_curve,
     crush_energy,
+    crush_params,
     crush_plateau,
     landing_mass,
     soil_force,
@@ -46,6 +47,15 @@ def test_crush_curve_shape_and_energy_integral():
         + 0.5 * (legs.densified_ratio - 1.0) * P * (s - sd)
     )
     assert crush_energy(legs, P, s, n=4000) == pytest.approx(exact, rel=1e-3)
+
+
+def test_breakout_load_exceeds_fully_fuelled_weight():
+    for name in ("lander_small", "cargo_hopper"):
+        v = load_vehicle(name)
+        P, onset = crush_params(v)
+        full = v.mass.dry + v.cargo.mass + v.prop_capacity + v.rcs.gas
+        assert onset * P >= 1.2 * full * G0 / v.legs.count - 1e-6
+        assert P >= crush_plateau(v)
 
 
 def test_default_crush_force_sized_for_design_speed():
@@ -93,7 +103,7 @@ def test_crush_energy_accounting_rigid_ground(vz):
     # crush work = the force-stroke curve integrated over the stroke used
     P = sim.gear.plateau
     for s, e in zip(r.stroke_used_m, r.energy_crush_j, strict=True):
-        assert e == pytest.approx(crush_energy(VEH.legs, P, s), rel=0.03)
+        assert e == pytest.approx(crush_energy(VEH.legs, P, s, onset=sim.gear.onset), rel=0.03)
     # at the design speed, about 3/4 of the stroke is used
     if vz == 5.0:
         assert 0.55 < max(r.stroke_fraction) < 0.85

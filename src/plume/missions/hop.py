@@ -136,6 +136,9 @@ class MissionWorld:
                     half_x=0.5 * (t.x_max - t.x_min),
                     half_y=0.5 * (t.y_max - t.y_min),
                     quat=_rot_to_quat(R),
+                    soil=self.spec.terrain.landing_soil
+                    if t.name == self.spec.terrain.landing_tile
+                    else None,
                 )
             )
         return out
@@ -777,11 +780,8 @@ def run_mission(
         if sim.ever_body_contact:
             failure = "crash_hull"
             break
-        if (
-            sim.touchdown is not None
-            and sim.touchdown.vertical_speed > vehicle.legs.max_touchdown_speed
-        ):
-            failure = "crash_legs"
+        if sim.touchdown is not None and (leg_failure := sim.leg_failure()):
+            failure = leg_failure  # crash_legs (rigid) / gear_bottomed, gear_overload, ...
             break
         if st.agl < 0.0 and sim.touchdown is None and sim.t > 30:
             # off the collision tiles the terrain is analytic: judge the arrival there

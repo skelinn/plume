@@ -17,6 +17,7 @@ import { padMesh, disposePad } from './pads.js';
 import { launchRail } from './models/hobby.js';
 import { Trail } from './trail.js';
 import { EngOverlay } from './engineering.js';
+import { DroneShip, Ocean } from './ship.js';
 import { clamp, smoothstep } from './util.js';
 
 const MAX_TRAIL_POINTS = 14000;
@@ -83,6 +84,8 @@ export class World {
 
     this.terrain = null;
     this.plane = null;
+    this.ocean = null;
+    this.ship = null;
     this.padObjs = [];
     this.labels = [];
     this.locator = null;
@@ -103,7 +106,17 @@ export class World {
   // ------------------------------------------------------------------ construction
   _buildGround() {
     const g = this.replay.meta.scene.ground || { type: 'plane' };
-    if (g.type === 'terrain' && g.terrain_id) {
+    const sh = this.replay.meta.ship;
+    if (sh) {
+      this.ship = new DroneShip(sh, this.atm);
+      this.scene.add(this.ship.group);
+      const [ox, oy] = sh.target_offset || [0, 0];
+      this.shipTarget = [ox, oy, sh.freeboard];
+    }
+    if (g.type === 'ocean') {
+      this.ocean = new Ocean(sh?.sea, this.atm);
+      this.scene.add(this.ocean.group);
+    } else if (g.type === 'terrain' && g.terrain_id) {
       this.terrain = new Terrain(this.frame, this.atm, this.groundU);
       this.scene.add(this.terrain.group);
     } else if (g.type !== 'none') {
@@ -143,7 +156,7 @@ export class World {
     this.targetW = tg ? enuToW(tg.pos) : null;
     this.targetR = tg ? tg.radius || 5 : 0;
     // a target with no pad under it gets a landing-zone slab (it is where the vehicle lands)
-    if (tg && !pads.some((p) => enuToW(p.pos).distanceTo(this.targetW) < Math.max(p.radius, tg.radius || 0) * 1.5)) {
+    if (tg && !tg.on_ship && !pads.some((p) => enuToW(p.pos).distanceTo(this.targetW) < Math.max(p.radius, tg.radius || 0) * 1.5)) {
       const R = clamp((tg.radius || 10) * 0.4, 6, 20);
       pads.push({ name: 'LZ', pos: tg.pos, radius: R, synthetic: true });
     }
@@ -347,6 +360,16 @@ export class World {
     this.sample = s;
     enuToW(s.pos, this.baseW);
     quatEnuToW(s.quat, this.quatW);
+    if (this.ship && s.deck_pos && s.deck_quat) {
+      // deck pose (ENU): the landing circle and its marker ride with the deck
+      const q = s.deck_quat, n = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
+      const qe = new THREE.Quaternion(q[1] / n, q[2] / n, q[3] / n, q[0] / n);
+      const tl = new THREE.Vector3(...this.shipTarget).applyQuaternion(qe);
+      const tp = [s.deck_pos[0] + tl.x, s.deck_pos[1] + tl.y, s.deck_pos[2] + tl.z];
+      enuToW(s.deck_pos, this.ship.W);
+      quatEnuToW([q[0] / n, q[1] / n, q[2] / n, q[3] / n], this.ship.q);
+      if (this.targetW) enuToW(tp, this.targetW);
+    }
     const basis = this.frame.basis(this.baseW);
     const axis = Y_UP.clone().applyQuaternion(this.quatW);
     this.axis = axis;
@@ -397,6 +420,11 @@ export class World {
 
     if (this.terrain) this.terrain.layout(origin);
     if (this.plane) this.plane.layout(camW, origin);
+    if (this.ocean) this.ocean.layout(st.t, camW, origin);
+    if (this.ship) {
+      this.ship.group.position.copy(this.ship.W).sub(origin);
+      this.ship.group.quaternion.copy(this.ship.q);
+    }
     this.trail.layout(origin);
     for (const p of this.padObjs) {
       p.mesh.position.copy(p.W).addScaledVector(p.up, p.offset ?? 0).sub(origin);
@@ -495,6 +523,8 @@ export class World {
     this.trail.dispose();
     this.terrain?.dispose();
     this.plane?.dispose();
+    this.ocean?.dispose();
+    this.ship?.dispose();
     this.dust.dispose();
     this.smoke?.dispose();
     this.eng.dispose();

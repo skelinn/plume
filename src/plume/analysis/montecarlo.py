@@ -471,6 +471,16 @@ def summarize(records: list[dict], ds: DispersionSpec, target_radius: float | No
             "touchdown_vh_mps": _pct([x.get("touchdown_vh_mps") for x in res]),
             "flight_time_s": _pct([x.get("flight_time_s") for x in res]),
             "landing_error_m": _pct(miss),
+            # landing gear (crush legs, high fidelity) and stability on the ground
+            **{
+                k: _pct([x.get(k) for x in res])
+                for k in (
+                    "stroke_fraction_max",
+                    "leg_load_peak_kn",
+                    "sinkage_max_m",
+                    "min_tipover_margin_deg",
+                )
+            },
         },
         "sensitivity": sens,
         "significance_threshold": 2.0 / math.sqrt(n) if n else 1.0,

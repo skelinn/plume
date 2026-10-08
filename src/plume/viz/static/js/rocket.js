@@ -134,7 +134,10 @@ export class Rocket {
     this.exitHeight = hO;
 
     if (this.gridFins) this.gridFins.update(s._fins ?? (s.fins_out === undefined ? 1 : s.fins_out), s.fins);
-    if (this.legs) this.legs.update(s.legs_out === undefined ? 1 : s._legs);
+    if (this.legs) {
+      this.legs.update(s.legs_out === undefined ? 1 : s._legs);
+      this.legs.setStroke(s.stroke);
+    }
     if (this.rcs) this.rcs.update(s.rcs, ctx.sunCol);
     // soot: coverage grows with accumulated dirty burn time
     const burn = s._soot || 0;

@@ -24,6 +24,14 @@ class MissionResult:
     score: float
     landing_east_m: float = 0.0  # final position minus target, map east / north
     landing_north_m: float = 0.0
+    # landing gear (docs/models/landing_gear.md); NaN where the leg model has no stroke
+    stroke_used_max_m: float = float("nan")
+    stroke_fraction_max: float = float("nan")
+    leg_load_peak_kn: float = float("nan")
+    gear_energy_kj: float = float("nan")
+    sinkage_max_m: float = float("nan")
+    tipover_margin_deg: float = float("nan")
+    min_tipover_margin_deg: float = float("nan")
 
     def summary(self) -> dict:
         return {
@@ -97,4 +105,5 @@ def score_mission(
         score=round(score, 2),
         landing_east_m=east,
         landing_north_m=north,
+        **{k: v for k, v in sim.gear.report().metrics().items() if k != "gear_model"},
     )

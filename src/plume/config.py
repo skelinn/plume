@@ -669,6 +669,9 @@ class MissionTerrainSpec(Spec):
     base: str = "demo_region"
     launch_tile: str | None = "demo_pad_a"
     landing_tile: str | None = "demo_lz_b"
+    landing_soil: SoilSpec | str | None = Field(
+        None, description="ground of the landing tile (crush legs); None = world.soil"
+    )
 
 
 class HopGuidanceSpec(Spec):
