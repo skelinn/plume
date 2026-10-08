@@ -145,9 +145,23 @@ class RCSSpec(Spec):
     pods: int = Field(4, ge=2)
     thrusters: list[ThrusterSpec] | None = Field(None, description="custom layout overrides ring")
 
+    @property
+    def gas(self) -> float:
+        """Cold-gas mass actually carried (zero when the RCS is disabled)."""
+        return self.propellant if self.enabled else 0.0
+
+
+class FinSpec(Spec):
+    """Fin set: linear normal force F = q * cn_alpha * alpha * A_ref acting at ``z``."""
+
+    count: int = Field(3, ge=0)
+    cn_alpha: float = Field(8.0, ge=0, description="normal-force slope per radian (body ref. area)")
+    z: float = Field(0.1, description="fin centre of pressure, body z")
+
 
 class AeroSpec(Spec):
     enabled: bool = True
+    fins: FinSpec | None = None
     reference_area: float | None = Field(None, description="defaults to hull cross-section")
     ca_nose_first: Table = Field(
         default_factory=lambda: [
@@ -176,6 +190,19 @@ class AeroSpec(Spec):
     stations: int = Field(10, ge=2, description="strip-theory stations along the hull")
 
 
+class ChuteSpec(Spec):
+    name: str = "main"
+    cd_area: float = Field(gt=0, description="drag coefficient x canopy area, m^2")
+    deploy: Literal["apogee", "altitude"] = "apogee"
+    delay: float = Field(0.0, ge=0, description="seconds after apogee (or after crossing altitude)")
+    altitude: float | None = Field(None, description="deploy='altitude': height above launch, m")
+    inflation_time: float = Field(0.5, ge=0)
+
+
+class RecoverySpec(Spec):
+    chutes: list[ChuteSpec] = Field(default_factory=list)
+
+
 class VehicleSpec(Spec):
     name: str
     description: str = ""
@@ -187,6 +214,7 @@ class VehicleSpec(Spec):
     engine: EngineSpec
     rcs: RCSSpec = Field(default_factory=lambda: RCSSpec(enabled=False))
     aero: AeroSpec = Field(default_factory=AeroSpec)
+    recovery: RecoverySpec = Field(default_factory=RecoverySpec)
 
     @model_validator(mode="after")
     def _check(self):
@@ -422,3 +450,55 @@ class MissionSpec(Spec):
 
 def load_mission(path_or_name: str | Path) -> MissionSpec:
     return MissionSpec.model_validate(load_yaml(_resolve(path_or_name, "missions")))
+
+
+# --------------------------------------------------------------------------- flight logs
+class ColumnSpec(Spec):
+    column: str
+    unit: str = "si"  # see plume.flightdata.importer.UNITS
+    scale: float = 1.0
+    offset: float = 0.0
+
+
+class AccelSpec(ColumnSpec):
+    includes_gravity: bool = Field(
+        True, description="raw accelerometer (reads +1 g on the pad) vs. gravity-removed"
+    )
+
+
+class GyroSpec(Spec):
+    columns: Annotated[list[str], Field(min_length=3, max_length=3)]
+    unit: str = "deg/s"
+
+
+class GpsSpec(Spec):
+    lat: str
+    lon: str
+    alt: str | None = None
+    alt_unit: str = "m"
+
+
+class LaunchDetectSpec(Spec):
+    accel_threshold_g: float = 2.5  # sustained axial load that marks liftoff
+    altitude_threshold: float = 15.0  # fallback when there is no accelerometer
+    pad_window: float = 1.0  # seconds of pre-launch data used to zero the baro
+
+
+class LogMappingSpec(Spec):
+    """Column mapping for a hobby flight-computer CSV export."""
+
+    name: str = "custom"
+    delimiter: str = ","
+    comment: str = "#"
+    skip_rows: int = 0
+    time: ColumnSpec
+    altitude: ColumnSpec
+    acceleration: AccelSpec | None = None
+    gyro: GyroSpec | None = None
+    gps: GpsSpec | None = None
+    launch_detect: LaunchDetectSpec = Field(default_factory=LaunchDetectSpec)
+    resample_hz: float = Field(50.0, gt=0)
+
+
+def load_log_mapping(path_or_name: str | Path) -> LogMappingSpec:
+    return LogMappingSpec.model_validate(load_yaml(_resolve(path_or_name, "flightlogs")))

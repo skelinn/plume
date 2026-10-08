@@ -221,7 +221,19 @@ class Supervisor:
         self.detector = detector or BusyDetector(idle_cfg)
         self.run_dir = Path(train_cfg.run_dir)
         self.proc: subprocess.Popen | None = None
-        self.log = log
+        self._print = log
+        self._last_wait: str | None = None
+
+    def log(self, msg: str) -> None:
+        """Timestamped line to stdout (flushed) and ``<run_dir>/supervisor.log``."""
+        line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
+        try:
+            self._print(line, flush=True)
+        except TypeError:
+            self._print(line)
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.run_dir / "supervisor.log", "a", encoding="utf-8") as f:
+            f.write(line + "\n")
 
     def _start_worker(self) -> None:
         (self.run_dir / STOP_FILE).unlink(missing_ok=True)
@@ -273,6 +285,15 @@ class Supervisor:
                     self._stop_worker("; ".join(reasons))
                 elif not busy and can_start and self.proc is None:
                     self._start_worker()
+                    self._last_wait = None
+                elif self.proc is None:
+                    why = "; ".join(reasons) if busy else "waiting for the PC to stay idle"
+                    if why != self._last_wait:
+                        self.log(f"[idle] {why}")
+                        self._last_wait = why
+                    state = read_state(self.run_dir)
+                    state["waiting_reason"] = why
+                    write_state(self.run_dir, state)
                 time.sleep(self.idle_cfg.poll_s)
         finally:
             if self.proc is not None:

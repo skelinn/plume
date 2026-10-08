@@ -1,0 +1,12 @@
+; Plume G75 -- a fictional 29 mm G-class motor (alternative for the sample rocket).
+G75 29 124 4-7 0.062 0.150 PLUME
+0.000 0.0
+0.030 118.0
+0.100 96.0
+0.400 86.0
+0.800 78.0
+1.100 70.0
+1.300 52.0
+1.420 18.0
+1.480 0.0
+;

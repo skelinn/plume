@@ -20,6 +20,7 @@ from plume.physics.aero import Aero
 from plume.physics.atmosphere import Atmosphere
 from plume.physics.gravity import gravity_from_world
 from plume.physics.propulsion import Engine
+from plume.physics.recovery import Recovery
 
 
 @dataclass
@@ -77,8 +78,10 @@ class PointMassSim:
         self.engine = Engine(vehicle.engine, vehicle.prop_capacity)
         if thrust_curve is not None:
             self.engine.set_thrust_curve(np.asarray(thrust_curve, dtype=float), self.prop0)
+        self.recovery = Recovery(vehicle.recovery)
+        self.chute_scale = 1.0  # calibration multiplier on parachute Cd*A
         cargo = vehicle.cargo.mass if cargo_mass is None else cargo_mass
-        self.m_dry = vehicle.mass.dry + cargo + vehicle.rcs.propellant * vehicle.rcs.enabled
+        self.m_dry = vehicle.mass.dry + cargo + vehicle.rcs.gas
 
     # -------------------------------------------------------------- engine (no lag)
     def _thrust_mdot(self, t: float, throttle: float, p_amb: float, prop: float):
@@ -98,7 +101,7 @@ class PointMassSim:
         mdot = thr * e.mdot_max
         return max(mdot * s.isp_vac * G0 - p_amb * e.exit_area, 0.0), mdot
 
-    def _derivs(self, t, r, v, prop, throttle, direction, tail_first):
+    def _derivs(self, t, r, v, prop, throttle, direction, tail_first, cda=0.0):
         alt = self.gravity.altitude(r)
         atm = self.atmosphere.at(alt)
         m = self.m_dry + max(prop, 0.0)
@@ -113,6 +116,8 @@ class PointMassSim:
             ca = self.aero.axial_coefficient(mach, not tail_first)
             drag = 0.5 * atm.density * speed * speed * ca * self.aero.ref_area
             a_ng -= drag / m * (va / speed)
+        if cda > 0 and atm.density > 0 and speed > 1e-9:
+            a_ng -= 0.5 * atm.density * cda * speed / m * va
         return v, a_ng + self.gravity.accel(r), -mdot, thrust, a_ng, alt
 
     def run(
@@ -157,6 +162,9 @@ class PointMassSim:
             return vv / sp if sp > 1.0 else rail
 
         on_rail = rail_length > 0
+        rec = self.recovery
+        rec.reset()
+        alt0 = self.gravity.altitude(r)
 
         ts, ps, vs, ms, fs, acc, alts = [], [], [], [], [], [], []
         t = t0
@@ -166,7 +174,11 @@ class PointMassSim:
             h = min(dt_fn(t, r, v) if dt_fn else dt, t_end - t)
             thr = thr_fn(t, r, v)
             d = dir_fn(t, r, v)
-            k1 = self._derivs(t, r, v, prop, thr, d, tail_first)
+            cda = 0.0
+            if rec.enabled:
+                rec.update(t, self.gravity.altitude(r) - alt0, float(v @ self.gravity.up(r)))
+                cda = rec.cd_area(t) * self.chute_scale
+            k1 = self._derivs(t, r, v, prop, thr, d, tail_first, cda)
             if n % record_every == 0:
                 ts.append(t)
                 ps.append(r.copy())
@@ -183,6 +195,7 @@ class PointMassSim:
                 thr,
                 d,
                 tail_first,
+                cda,
             )
             k3 = self._derivs(
                 t + h / 2,
@@ -192,9 +205,10 @@ class PointMassSim:
                 thr,
                 d,
                 tail_first,
+                cda,
             )
             k4 = self._derivs(
-                t + h, r + h * k3[0], v + h * k3[1], prop + h * k3[2], thr, d, tail_first
+                t + h, r + h * k3[0], v + h * k3[1], prop + h * k3[2], thr, d, tail_first, cda
             )
             r = r + h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0])
             v_new = v + h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1])

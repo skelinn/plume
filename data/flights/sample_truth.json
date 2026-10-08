@@ -1,0 +1,8 @@
+{
+  "cd_scale": 1.22,
+  "impulse_scale": 0.94,
+  "time_scale": 1.07,
+  "chute_cd_area": 0.47,
+  "rail_length": 1.5,
+  "rail_tilt_deg": 4.0
+}

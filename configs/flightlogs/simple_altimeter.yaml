@@ -1,0 +1,7 @@
+# A minimal logger: semicolon-separated, seconds / metres / m/s^2 with gravity removed.
+name: simple_altimeter
+delimiter: ";"
+time:         {column: "Time (s)", unit: s}
+altitude:     {column: "Altitude (m)", unit: m}
+acceleration: {column: "Accel (m/s2)", unit: m/s2, includes_gravity: false}
+resample_hz: 50

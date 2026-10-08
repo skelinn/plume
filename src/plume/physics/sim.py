@@ -28,6 +28,7 @@ from plume.physics.gravity import gravity_from_world
 from plume.physics.massprops import MassModel, MassProps
 from plume.physics.mjcf import GroundTile, build_mjcf, leg_angles
 from plume.physics.propulsion import RCS, Engine
+from plume.physics.recovery import Recovery
 from plume.physics.wind import WindModel
 
 
@@ -192,9 +193,11 @@ class RocketSim:
         self.mass_model = MassModel(vehicle)
         self.engine = Engine(vehicle.engine, vehicle.prop_capacity)
         self.tank_init = np.array([t.initial_mass for t in vehicle.tanks], dtype=float)
-        nominal = self.mass_model.evaluate(self.tank_init, vehicle.rcs.propellant)
+        nominal = self.mass_model.evaluate(self.tank_init, vehicle.rcs.gas)
         self.rcs = RCS(vehicle.rcs, vehicle, nominal.cg_z)
         self.aero = Aero(vehicle.aero, vehicle.geometry)
+        self.recovery = Recovery(vehicle.recovery)
+        self.rail: dict | None = None
         self.has_ground = self.world.ground != "none" or bool(tiles)
         self._ground_height = ground_height or (lambda p: 0.0)
 
@@ -251,10 +254,12 @@ class RocketSim:
             )
         else:
             self.tanks = np.asarray(prop, dtype=float).copy()
-        self.rcs_prop = self.vehicle.rcs.propellant if rcs_prop is None else float(rcs_prop)
+        self.rcs_prop = self.vehicle.rcs.gas if rcs_prop is None else float(rcs_prop)
         self.cargo_mass = self.vehicle.cargo.mass if cargo_mass is None else float(cargo_mass)
         self.engine.reset()
         self.rcs.reset()
+        self.recovery.reset()
+        self.rail = None
         self.wind.reset(seed)
         self.controls = Controls()
         self.t = 0.0
@@ -288,6 +293,7 @@ class RocketSim:
         self.data.qvel[3:6] = omega
         mujoco.mj_forward(self.model, self.data)
         self._state_cache = None
+        self.launch_altitude = self.gravity.altitude(self.com())
         self._prev_v_cg = self._point_velocity(self.mp.cg)
         self._prev_v_cargo = self._point_velocity(self.cargo_body)
         self.airborne = False
@@ -402,6 +408,15 @@ class RocketSim:
 
         g = self.gravity.accel(com + (0.5 * dt) * v_com)
         f_w = R @ (f_t + f_r + f_a) + mp.mass * g
+        f_chute = None
+        if self.recovery.enabled:
+            up = self.gravity.up(com)
+            self.recovery.update(self.t, alt - self.launch_altitude, float(v_com @ up))
+            cda = self.recovery.cd_area(self.t)
+            if cda > 0:
+                va = float(np.linalg.norm(v_air_w))
+                f_chute = -0.5 * atm.density * cda * va * v_air_w
+                f_w = f_w + f_chute
         # xfrc_applied acts at the dry body's CG: shift the torque from the total CG
         tau_w = R @ (tau_t + tau_r + tau_a + _z_cross(cgz - self.dry_z, R.T @ f_w))
         xfrc = data.xfrc_applied[self.bid]
@@ -414,10 +429,14 @@ class RocketSim:
             work["thrust"] += (float(f_t @ (R.T @ v_com)) + float(tau_t @ omega_b)) * dt
         if self.aero.enabled:
             work["aero"] += (float(f_a @ (R.T @ v_air_w)) + float(tau_a @ omega_b)) * dt
+        if f_chute is not None:
+            work["aero"] += float(f_chute @ v_air_w) * dt
         if mdot_r > 0:
             work["rcs"] += (float(f_r @ (R.T @ v_com)) + float(tau_r @ omega_b)) * dt
 
         mujoco.mj_step(self.model, data)
+        if self.rail is not None:
+            self._apply_rail()
         self.t += dt
         self.wind.step(dt)
 
@@ -460,6 +479,32 @@ class RocketSim:
         self._state_cache = None
         if data.ncon or self.legs_down or self.body_contact or not self.airborne:
             self._contacts()
+
+    # ------------------------------------------------------------------ launch rail
+    def set_rail(self, length: float, direction=None) -> None:
+        """Constrain the vehicle to slide along a launch rail from its current pose."""
+        d = self.rot[:, 2] if direction is None else np.asarray(direction, dtype=float)
+        self.rail = {
+            "start": self.data.qpos[:3].copy(),
+            "dir": d / np.linalg.norm(d),
+            "quat": self.data.qpos[3:7].copy(),
+            "length": float(length),
+        }
+
+    def _apply_rail(self) -> None:
+        r = self.rail
+        data = self.data
+        disp = float((data.qpos[:3] - r["start"]) @ r["dir"])
+        if disp >= r["length"]:
+            self.rail = None  # left the rail
+            return
+        v_along = float(data.qvel[:3] @ r["dir"])
+        if disp <= 0.0:
+            disp, v_along = 0.0, max(v_along, 0.0)
+        data.qpos[:3] = r["start"] + disp * r["dir"]
+        data.qpos[3:7] = r["quat"]
+        data.qvel[:3] = v_along * r["dir"]
+        data.qvel[3:6] = 0.0
 
     def _contacts(self) -> None:
         feet = set()

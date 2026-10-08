@@ -1,0 +1,17 @@
+; Plume H180 -- a fictional 29 mm H-class APCP reload used for the bundled
+; sample flights. RASP .eng format: name dia(mm) len(mm) delays prop(kg) total(kg) mfr
+H180 29 194 6-10-14 0.125 0.290 PLUME
+0.000 0.0
+0.020 262.0
+0.050 248.0
+0.150 228.0
+0.300 214.0
+0.500 205.0
+0.700 192.0
+0.900 175.0
+1.050 158.0
+1.150 132.0
+1.240 78.0
+1.300 30.0
+1.340 0.0
+;

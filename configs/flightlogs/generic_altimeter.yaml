@@ -1,0 +1,16 @@
+# Column mapping for a typical hobby flight-computer CSV export
+# (time in ms, baro altitude in feet, axial accelerometer in g incl. gravity,
+# gyro in deg/s, optional GPS). Copy and edit for your own logger.
+name: generic_altimeter
+delimiter: ","
+comment: "#"
+time:         {column: time_ms, unit: ms}
+altitude:     {column: baro_alt_ft, unit: ft}
+acceleration: {column: accel_z_g, unit: g, includes_gravity: true}
+gyro:         {columns: [gyro_x_dps, gyro_y_dps, gyro_z_dps], unit: deg/s}
+gps:          {lat: gps_lat, lon: gps_lon, alt: gps_alt_m, alt_unit: m}
+launch_detect:
+  accel_threshold_g: 2.5
+  altitude_threshold: 15.0
+  pad_window: 1.0
+resample_hz: 50

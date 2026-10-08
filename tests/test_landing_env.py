@@ -40,7 +40,9 @@ def test_seeded_determinism():
         rng = np.random.default_rng(0)
         traj = [obs]
         for _ in range(40):
-            obs, _r, term, trunc, _ = env.step(rng.uniform(-1, 1, env.action_space.shape).astype(np.float32))
+            obs, _r, term, trunc, _ = env.step(
+                rng.uniform(-1, 1, env.action_space.shape).astype(np.float32)
+            )
             traj.append(obs)
             if term or trunc:
                 break

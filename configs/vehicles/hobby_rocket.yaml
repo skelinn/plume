@@ -1,0 +1,47 @@
+# High-power hobby rocket (66 mm airframe, three fins, 29 mm H motor, single
+# parachute at apogee). Used for the flight-log import and sim-to-real
+# calibration examples. Body z is measured from the aft end.
+name: hobby_rocket
+description: 1.45 m, 66 mm three-fin rocket on a 29 mm H motor with a main chute at apogee.
+geometry:
+  length: 1.45
+  diameter: 0.066
+  nose_length: 0.30
+legs:
+  count: 0
+mass:
+  dry: 1.20              # airframe, recovery, electronics + empty motor casing
+  dry_cg_z: 0.62
+  dry_inertia: [0.21, 0.21, 0.0012]
+tanks:
+  - name: grain
+    capacity: 0.125
+    z_bottom: 0.02
+    z_top: 0.21
+    radius: 0.012
+engine:
+  type: solid
+  motor_file: Plume_H180.eng   # looked up next to this file, then in data/motors/
+  ignition_time: 0.0
+  gimbal_max_deg: 0.0
+  gimbal_z: 0.0
+  nozzle_radius: 0.012
+rcs:
+  enabled: false
+aero:
+  enabled: true
+  stations: 10
+  ca_nose_first: [[0.0, 0.48], [0.5, 0.48], [0.8, 0.55], [1.0, 0.80], [1.2, 0.85], [2.0, 0.65]]
+  ca_tail_first: [[0.0, 0.90], [1.0, 1.10], [2.0, 1.00]]
+  crossflow_cd: [[0.0, 1.2], [1.0, 1.5], [2.0, 1.4]]
+  fins:
+    count: 3
+    cn_alpha: 9.0        # Barrowman-style slope, per radian, body reference area
+    z: 0.09              # fin centre of pressure (aft) -> statically stable
+recovery:
+  chutes:
+    - name: main
+      cd_area: 0.55      # ~36 in canopy -> ~6 m/s descent
+      deploy: apogee
+      delay: 1.0
+      inflation_time: 0.6

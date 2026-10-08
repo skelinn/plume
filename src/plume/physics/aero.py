@@ -36,6 +36,9 @@ class Aero:
             in_nose = self.z > nose_start
             width[in_nose] = geometry.diameter * (L - self.z[in_nose]) / geometry.nose_length
         self.strip_area = width * dz  # projected side area per strip
+        fins = spec.fins
+        self.fin_cn = fins.cn_alpha * self.ref_area if fins and fins.count > 0 else 0.0
+        self.fin_z = fins.z if fins else 0.0
 
     @property
     def cd_scale(self) -> float:
@@ -85,4 +88,15 @@ class Aero:
         force = np.array([fx.sum(), fy.sum(), f_axial])
         # torque of lateral strip forces about the CG: (0,0,dz) x (fx,fy,0)
         torque = np.array([-(dz * fy).sum(), (dz * fx).sum(), 0.0])
+        if self.fin_cn > 0:
+            # fins: linear normal force q * CN_alpha * alpha * A at the fin CP
+            # (alpha ~ u / |v| with u the local crossflow) -> -0.5 rho |v| CN A u
+            fz = self.fin_z - cg_z
+            u_x = vx + wy * fz
+            u_y = vy - wx * fz
+            k_f = -0.5 * rho * math.sqrt(speed2) * self.fin_cn
+            force[0] += k_f * u_x
+            force[1] += k_f * u_y
+            torque[0] -= fz * k_f * u_y
+            torque[1] += fz * k_f * u_x
         return force, torque, q, mach

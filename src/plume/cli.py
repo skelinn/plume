@@ -145,6 +145,8 @@ def train(
         eta = eta_seconds(st, cfg.total_timesteps)
         if eta == eta:  # not NaN
             table.add_row("remaining (active time)", f"{eta / 3600:.1f} h")
+        if st.get("waiting_reason"):
+            table.add_row("now", st["waiting_reason"])
         if st.get("last_pause_reason"):
             table.add_row("last pause", f"{st['last_pause_reason']} at {st.get('last_pause_time')}")
         table.add_row("updated", str(st.get("updated", "-")))
@@ -208,6 +210,104 @@ def hop(
     console.print(f"replay: [cyan]{path}[/]")
 
 
+def _load_flight(csv: Path, mapping: str):
+    from plume.flightdata.importer import load_log
+
+    log = load_log(csv, mapping)
+    table = Table(title=f"flight log: {csv.name}", show_header=False)
+    table.add_row("mapping", log.meta["mapping"])
+    table.add_row("samples", f"{len(log.t):,} at {log.meta['rate_hz']:g} Hz")
+    table.add_row("liftoff (raw clock)", f"{log.meta['launch_time_raw']:.3f} s")
+    table.add_row("apogee", f"{log.apogee:,.1f} m at T+{log.t_apogee:.2f} s")
+    table.add_row("max velocity (fused)", f"{log.velocity.max():.1f} m/s")
+    if log.burnout_time:
+        table.add_row("burnout", f"T+{log.burnout_time:.2f} s")
+    table.add_row(
+        "sensors",
+        ", ".join(k for k in ("accel", "gyro", "east") if getattr(log, k) is not None).replace(
+            "east", "gps"
+        ),
+    )
+    return log, table
+
+
+@app.command("import-log")
+def import_log(
+    csv: Annotated[Path, typer.Argument(help="flight computer CSV export")],
+    mapping: Annotated[str, typer.Option(help="column mapping name or YAML")] = "generic_altimeter",
+    vehicle: Annotated[
+        str, typer.Option(help="vehicle used for the 3-D model in the replay")
+    ] = "hobby_rocket",
+    out: Annotated[Path | None, typer.Option(help="replay output")] = None,
+):
+    """Import a CSV log (unit conversion, liftoff detection, Kalman velocity) to a replay."""
+    from plume.flightdata.compare import log_to_replay
+    from plume.recording import save_replay
+
+    log, table = _load_flight(csv, mapping)
+    console.print(table)
+    path = save_replay(
+        log_to_replay(log, load_vehicle(vehicle), f"Real flight: {csv.stem}"),
+        out or Path("runs") / f"real_{csv.stem}.plume.json.gz",
+    )
+    console.print(f"replay: [cyan]{path}[/]")
+
+
+@app.command()
+def calibrate(
+    csv: Annotated[Path, typer.Argument(help="flight computer CSV export")],
+    mapping: Annotated[str, typer.Option(help="column mapping name or YAML")] = "generic_altimeter",
+    vehicle: Annotated[
+        str, typer.Option(help="vehicle preset/YAML with the nominal motor")
+    ] = "hobby_rocket",
+    rail: Annotated[float, typer.Option(help="launch rail length, m")] = 1.5,
+    mode: Annotated[str, typer.Option(help="scale | knots (thrust-curve shape)")] = "scale",
+    out_dir: Annotated[Path, typer.Option(help="where to write results")] = Path(
+        "runs/calibration"
+    ),
+):
+    """Fit drag, thrust curve and parachute to a real flight; overlay real vs sim."""
+    from plume.config import dump_yaml
+    from plume.flightdata.calibrate import calibrate as run_calibration
+    from plume.flightdata.calibrate import describe
+    from plume.flightdata.compare import log_to_replay, plot_comparison, trace_to_replay
+    from plume.recording import save_replay
+
+    v = load_vehicle(vehicle)
+    log, table = _load_flight(csv, mapping)
+    console.print(table)
+    with console.status("fitting drag + thrust curve (least squares on the 3-DOF model)..."):
+        res = run_calibration(log, v, rail_length=rail, mode=mode)
+    fit = Table(title="calibration", show_header=False)
+    for k, val in describe(res):
+        fit.add_row(k, val)
+    console.print(fit)
+    for note in res.notes:
+        console.print(f"[yellow]{note}[/]")
+    stem = csv.stem
+    out_dir.mkdir(parents=True, exist_ok=True)
+    yaml_path = dump_yaml(res.vehicle, out_dir / f"{v.name}_{stem}.yaml")
+    png = plot_comparison(
+        log,
+        [res.nominal_trace, res.calibrated_trace],
+        out_dir / f"{stem}_overlay.png",
+        f"{stem}: real vs simulated",
+    )
+    real = save_replay(
+        log_to_replay(log, v, f"Real flight: {stem}"), Path("runs") / f"real_{stem}.plume.json.gz"
+    )
+    sim = save_replay(
+        trace_to_replay(res.calibrated_trace, res.vehicle, f"Calibrated sim: {stem}"),
+        Path("runs") / f"sim_{stem}.plume.json.gz",
+    )
+    console.print(f"calibrated vehicle: [cyan]{yaml_path}[/]")
+    console.print(f"overlay plot:       [cyan]{png}[/]")
+    console.print(f"replays:            [cyan]{real}[/], [cyan]{sim}[/]")
+    console.print(
+        f"compare in the viewer: [cyan]plume viz[/] -> ?compare=real_{stem}.plume.json.gz,sim_{stem}.plume.json.gz"
+    )
+
+
 @app.command()
 def bench(
     episodes: Annotated[int, typer.Option(help="episodes per stage and controller")] = 200,
@@ -241,14 +341,15 @@ def info(vehicle: Annotated[str, typer.Argument()] = "lander_small"):
 
     v = load_vehicle(vehicle)
     mm = MassModel(v)
-    full = mm.evaluate([t.initial_mass for t in v.tanks], v.rcs.propellant)
-    empty = mm.evaluate([0.0 for _ in v.tanks], v.rcs.propellant)
+    full = mm.evaluate([t.initial_mass for t in v.tanks], v.rcs.gas)
+    empty = mm.evaluate([0.0 for _ in v.tanks], v.rcs.gas)
     e = Engine(v.engine, v.prop_capacity)
     import math
 
     table = Table(title=v.name, show_header=False)
     table.add_row("description", v.description)
-    table.add_row("wet / dry mass", f"{full.mass:,.0f} / {empty.mass:,.0f} kg")
+    fmt = ",.0f" if full.mass >= 100 else ".3f"
+    table.add_row("wet / dry mass", f"{full.mass:{fmt}} / {empty.mass:{fmt}} kg")
     table.add_row("cargo", f"{v.cargo.mass:,.0f} kg")
     table.add_row(
         "max thrust (SL / vac)", f"{e.max_thrust(101325):,.0f} / {e.max_thrust(0):,.0f} N"
