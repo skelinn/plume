@@ -89,6 +89,7 @@ select option { background: var(--s1); color: var(--t1); }
 .seg button:hover, .tb-btn:hover { color: var(--t1); background: var(--s2); }
 .seg button.on, .seg button[aria-pressed="true"], .tb-btn[aria-pressed="true"] { color: var(--bg); background: var(--t1); }
 .tb-btn { height: 24px; border: 1px solid var(--rule); border-radius: 2px; min-width: 24px; }
+a.tb-btn { display: inline-flex; align-items: center; text-decoration: none; }
 
 /* ---------------------------------------------------------------- top bar */
 #topbar {

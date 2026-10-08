@@ -249,15 +249,30 @@ def run_reliability(mission: Path, mc_dir: Path, runs: int, fidelity: str, repla
     flight-safety export."""
     from plume.analysis.montecarlo import (
         DispersionSpec,
+        _get,
         load_dispersion,
         run_mc,
         summarize,
         write_report,
     )
-    from plume.analysis.safety import analyze, write_outputs
-    from plume.config import load_mission
+    from plume.analysis.safety import GeoFrame, analyze, load_replay, viewer_overlay, write_outputs
+    from plume.config import load_mission, load_vehicle
+    from plume.recording import save_replay
 
+    spec = load_mission(mission)
     template = load_dispersion("real_hop" if fidelity == "high" else "demo_hop")
+    vdict = load_vehicle(spec.vehicle).model_dump()
+
+    def applies(path: str) -> bool:  # e.g. no grid-fin dispersion for a finless vehicle
+        root, *rest = path.split(".")
+        if root != "vehicle":
+            return True
+        try:
+            return _get(vdict, rest) is not None
+        except (KeyError, IndexError, TypeError):
+            return False
+
+    params = {k: v for k, v in template.params.items() if applies(k)}
     ds = DispersionSpec(
         name=f"{mission.stem}_{fidelity}",
         description="planner reliability estimate (screening)",
@@ -265,17 +280,20 @@ def run_reliability(mission: Path, mc_dir: Path, runs: int, fidelity: str, repla
         runs=runs,
         seed=1,
         fidelity=fidelity,
-        params=template.params,
+        params=params,
     )
     records = run_mc(
         ds, mc_dir, workers=min(MAX_WORKERS, runs), idle_aware=True, log=lambda *_: None
     )
-    spec = load_mission(mission)
     summary = summarize(records, ds, spec.target_radius)
     (mc_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     write_report(summary, records, mc_dir / "report.html")
-    analysis = analyze(mc_dir=mc_dir, replay=replay)
+    rep = load_replay(replay)
+    analysis = analyze(mc_dir=mc_dir, replay=rep)
     write_outputs(analysis, mc_dir)
+    # IIP trace and hazard areas in the replay, for the viewer's engineering view
+    rep["meta"]["safety"] = viewer_overlay(analysis, GeoFrame.from_replay_meta(rep["meta"]))
+    save_replay(rep, replay)
     lo, hi = summary["success_ci95"]
     land = summary.get("landing") or {}
     return _clean(

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Plume Mission Planner</title>
+  <meta name="description" content="Plan a point-to-point cargo hop: pick two sites, a vehicle and a cargo mass; get range, propellant margin, apogee, flight time and cargo load.">
+  <link rel="icon" type="image/png" href="/static/img/favicon.png">
+  <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
+  <link rel="preload" href="/static/vendor/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/vendor/fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/planner.css">
+</head>
+<body class="planner">
+  <header id="topbar">
+    <div class="wordmark" aria-label="Plume Rocketry"><img class="mark" src="/static/img/mark.png" alt="" width="14" height="20">plume</div>
+    <span class="lbl">Mission planner</span>
+    <span class="mode-tag" id="mode-tag" hidden>Demo</span>
+    <div class="spacer"></div>
+    <div class="tb-group">
+      <span class="lbl hide-md">Map click sets</span>
+      <div class="seg" id="pick-seg" role="group" aria-label="Map click sets">
+        <button data-pick="launch" class="on" title="Click the map to place the launch site">Launch</button>
+        <button data-pick="landing" title="Click the map to place the landing site">Landing</button>
+      </div>
+    </div>
+    <a class="tb-btn tb-link" id="lnk-viewer" href="/" title="3-D flight viewer">Viewer</a>
+  </header>
+
+  <main id="pl-stage">
+    <section id="map-wrap" aria-label="World map">
+      <canvas id="map" aria-label="Map: click to place sites, drag to pan, wheel to zoom"></canvas>
+      <div class="map-ctl" role="group" aria-label="Zoom">
+        <button id="zoom-in" class="tb-btn" title="Zoom in">+</button>
+        <button id="zoom-out" class="tb-btn" title="Zoom out">&minus;</button>
+        <button id="zoom-fit" class="tb-btn" title="Fit the route">Fit</button>
+      </div>
+      <div class="map-read mono" id="map-read" aria-live="off"></div>
+      <div class="map-key" id="map-key"></div>
+      <div class="map-src">Coastlines and borders: Natural Earth (public domain)</div>
+    </section>
+
+    <aside id="pl-side" aria-label="Mission">
+      <section class="panel">
+        <header class="panel-head"><span class="lbl">Route</span><button class="x-btn" id="swap" title="Swap launch and landing">Swap</button></header>
+        <div class="form">
+          <div class="site" data-site="launch">
+            <div class="site-head"><i class="sym sq"></i><span class="lbl">Launch</span></div>
+            <input class="txt" list="site-list" id="launch-name" placeholder="Search spaceports and airports" autocomplete="off" aria-label="Launch site search">
+            <div class="ll">
+              <label><span class="lbl">Lat</span><input class="num-in" id="launch-lat" inputmode="decimal" aria-label="Launch latitude"></label>
+              <label><span class="lbl">Lon</span><input class="num-in" id="launch-lon" inputmode="decimal" aria-label="Launch longitude"></label>
+            </div>
+          </div>
+          <div class="site" data-site="landing">
+            <div class="site-head"><i class="sym dm"></i><span class="lbl">Landing</span></div>
+            <input class="txt" list="site-list" id="landing-name" placeholder="Search spaceports and airports" autocomplete="off" aria-label="Landing site search">
+            <div class="ll">
+              <label><span class="lbl">Lat</span><input class="num-in" id="landing-lat" inputmode="decimal" aria-label="Landing latitude"></label>
+              <label><span class="lbl">Lon</span><input class="num-in" id="landing-lon" inputmode="decimal" aria-label="Landing longitude"></label>
+            </div>
+          </div>
+          <datalist id="site-list"></datalist>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header class="panel-head"><span class="lbl">Vehicle and cargo</span></header>
+        <div class="form">
+          <label class="row"><span class="lbl">Vehicle</span><select id="vehicle" aria-label="Vehicle preset"></select></label>
+          <p class="fine" id="vehicle-desc"></p>
+          <label class="row"><span class="lbl">Cargo</span><span class="cargo"><input class="num-in" id="cargo" inputmode="decimal" aria-label="Cargo mass, kg"><span class="u">kg</span></span></label>
+          <input type="range" id="cargo-slider" min="0" max="450" step="5" aria-label="Cargo mass slider">
+        </div>
+      </section>
+
+      <section class="panel" id="result-panel">
+        <header class="panel-head"><span class="lbl">Feasibility</span><span class="hint" id="result-src"></span></header>
+        <div id="result"><p class="empty pad">Place a launch and a landing site.</p></div>
+      </section>
+
+      <section class="panel">
+        <header class="panel-head"><span class="lbl">Range vs cargo</span><span class="hint">max range, this vehicle</span></header>
+        <div id="curve"></div>
+      </section>
+
+      <section class="panel" id="sim-panel">
+        <header class="panel-head"><span class="lbl">Simulation</span></header>
+        <div id="sim"></div>
+      </section>
+
+      <section class="panel">
+        <p class="fine pad">Screening estimates from Plume's 3-DOF planner (the flight software's own
+          planning models: calm air, nominal vehicle). Full 6-DOF flights and Monte Carlo campaigns are the
+          reference; nothing here is validated against real flight data yet. Site coordinates are approximate.</p>
+      </section>
+    </aside>
+  </main>
+
+  <div id="toast" role="status"></div>
+  <script type="module" src="/static/js/planner.js"></script>
+</body>
+</html>

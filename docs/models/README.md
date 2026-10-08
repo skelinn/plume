@@ -13,6 +13,7 @@ Each page documents one physical model: the equations, parameters and defaults, 
 | [navigation.md](navigation.md) | IMU, GNSS, barometric and radar altimeters; 15-state error-state EKF | verified (noise statistics, latency, filter accuracy) |
 | [guidance.md](guidance.md) | the vehicle's flight software for the cargo hop: ascent plan, impact prediction, landing autopilot, attitude control (not a physics model) | assessed by Monte Carlo, not by unit verification; the page states it is not yet dependable |
 | [terrain.md](terrain.md) | Copernicus DEM terrain: download, projection, resampling, synthetic detail, landing hazards | verified (projection, resampling against analytic surfaces, hazard maps) |
+| [flight_safety.md](flight_safety.md) | flight-safety export: WGS-84 conversion, instantaneous impact point (vacuum and drag-aware), landing dispersion, failure probability by phase, hazard areas, GeoJSON/KML (an analysis product, not a physics model) | verified (geodesy round trips, IIP against numerical integration and Coriolis, geometry, file structure); not a certified flight safety analysis |
 
 **Validation is pending for every model.** Verification shows that the code implements the stated equations correctly. Validation, meaning agreement with real flight or test data, needs data that does not exist yet. The Monte Carlo reports in [`docs/mc/`](../mc/) quantify dependability under the stated dispersions. They inherit the model-form error of these unvalidated models.
 

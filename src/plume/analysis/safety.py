@@ -112,12 +112,12 @@ class GeoFrame:
         h_ref = self.latlon(ref)[2]
         q = ref + east * E[:, 0] + north * E[:, 1]
         lat = lon = 0.0
-        for _ in range(8):
+        for _ in range(20):
             lat, lon, _ = self.latlon(q)
             p = self.world_point(lat, lon, h_ref)
             d = p - ref
             de, dn = east - float(d @ E[:, 0]), north - float(d @ E[:, 1])
-            if abs(de) + abs(dn) < 0.01:
+            if abs(de) + abs(dn) < 1e-4:
                 break
             q = q + de * E[:, 0] + dn * E[:, 1]
         return lat, lon
@@ -736,8 +736,14 @@ def to_geojson(sa: SafetyAnalysis) -> dict:
             phase=phase,
         )
     for h in sa.hazard_areas:
-        props = {k: v for k, v in h.items() if k != "ring"}
-        add({"type": "Polygon", "coordinates": [_ring_ccw(h["ring"])]}, **props, name=h["label"])
+        props = {k: v for k, v in h.items() if k not in ("ring", "kind", "label")}
+        add(
+            {"type": "Polygon", "coordinates": [_ring_ccw(h["ring"])]},
+            kind="hazard_area",
+            hazard=h["kind"],
+            name=h["label"],
+            **props,
+        )
     return {
         "type": "FeatureCollection",
         "name": sa.name,
@@ -1028,7 +1034,7 @@ body{{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 "IBM Plex Sans
 main{{max-width:960px;margin:0 auto;padding:32px 16px}}
 h1{{font-size:20px;font-weight:600;margin:0 0 4px}} h2{{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin:32px 0 8px;font-weight:500}}
 p.sub{{color:var(--mute);margin:0 0 24px}}
-.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border-top:1px solid var(--rule);border-left:1px solid var(--rule)}}
+.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));border-top:1px solid var(--rule);border-left:1px solid var(--rule)}}
 .kpi{{padding:12px 16px;border-right:1px solid var(--rule);border-bottom:1px solid var(--rule)}}
 .kpi b{{display:block;font:500 20px "IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}}
 .kpi span{{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}}

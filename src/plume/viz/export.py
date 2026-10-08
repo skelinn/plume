@@ -7,7 +7,11 @@
 * ``api/replays.json`` and ``api/replays/<id>.json`` - the replay list and the replays
   (decompressed: static hosts do not send ``Content-Encoding`` for ``.gz`` files),
 * ``api/terrain/<id>.<max_dim>.json`` / ``.f32`` - every terrain the replays use,
-* ``reports/`` - the V&V report and Monte Carlo reports from ``docs/``.
+* ``planner.html`` - the mission planner in demo mode: feasibility interpolated from the
+  bundled precomputed table (``static/planner/capability.json``); full simulations need
+  ``plume viz`` locally,
+* ``reports/`` - the V&V report, Monte Carlo reports and flight-safety summaries from
+  ``docs/``.
 
 The files are produced by calling the real server endpoints through FastAPI's test
 client, so the static data is byte-for-byte what ``plume viz`` serves.
@@ -50,10 +54,17 @@ def export_site(
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     html = html.replace('"/static/', '"./static/')  # import maps need ./ for relative URLs
     html = html.replace("<head>", "<head>\n  <script>window.PLUME_STATIC = true;</script>", 1)
+    html = html.replace('href="/planner"', 'href="planner.html"')
     (out / "index.html").write_text(html, encoding="utf-8")
     (out / "static" / "index.html").unlink(missing_ok=True)
+    # mission planner, demo mode (precomputed feasibility; simulations need `plume viz`)
+    planner = (STATIC_DIR / "planner.html").read_text(encoding="utf-8")
+    planner = planner.replace('"/static/', '"./static/').replace('href="/"', 'href="./"')
+    planner = planner.replace("<head>", "<head>\n  <script>window.PLUME_STATIC = true;</script>", 1)
+    (out / "planner.html").write_text(planner, encoding="utf-8")
+    (out / "static" / "planner.html").unlink(missing_ok=True)
 
-    app = create_app(replay_dirs=replay_dirs, terrain_dirs=terrain_dirs)
+    app = create_app(replay_dirs=replay_dirs, terrain_dirs=terrain_dirs, planner_dir=None)
     client = TestClient(app)
     rows = client.get("/api/replays").json()
     order = {rid: k for k, rid in enumerate(FEATURED)}
@@ -100,6 +111,12 @@ def export_site(
         (rep / "mc").mkdir(exist_ok=True)
         shutil.copy(p, rep / "mc" / p.name)
         links.append((f"mc/{p.name}", f"Monte Carlo: {p.stem}"))
+    for d in sorted(x for x in (docs / "safety").glob("*") if (x / "safety.html").exists()):
+        shutil.copytree(d, rep / "safety" / d.name)
+        links.append((f"safety/{d.name}/safety.html", f"Flight safety: {d.name}"))
+        for ext, label in (("geojson", "GeoJSON"), ("kml", "KML for Google Earth")):
+            if (d / f"safety.{ext}").exists():
+                links.append((f"safety/{d.name}/safety.{ext}", f"Flight safety: {d.name}, {label}"))
     items = "".join(f'<li><a href="{h}">{t}</a></li>' for h, t in links)
     (rep / "index.html").write_text(
         f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -108,7 +125,7 @@ def export_site(
 body{{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 "IBM Plex Sans",system-ui,sans-serif}}
 main{{max-width:720px;margin:0 auto;padding:40px 16px}}a{{color:inherit}}h1{{font-size:20px;font-weight:600}}
 p{{color:var(--mute)}}</style></head><body><main><h1><img src="../static/img/mark.png" alt="" height="28" style="vertical-align:-5px;margin-right:10px">Plume reports</h1>
-<p>Verification results and Monte Carlo dependability campaigns. <a href="../">Open the 3-D viewer</a> ·
+<p>Verification results, Monte Carlo dependability campaigns and flight-safety exports. <a href="../">Open the 3-D viewer</a> · <a href="../planner.html">Mission planner (demo)</a> ·
 <a href="https://github.com/skelinn/plume">Source on GitHub</a></p><ul>{items}</ul></main></body></html>""",
         encoding="utf-8",
     )

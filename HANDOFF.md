@@ -82,6 +82,6 @@ _Last updated: 2026-10-08 (evening)_
 | 6 | Multi-stage + orbit | starting | worktree agent |
 | 7 | Ship landing | starting | worktree agent |
 | 8 | Landing gear + soil | starting | same agent as 7 |
-| 9 | Mission planner | starting | worktree agent |
+| 9 | Mission planner | done (branch, PR pending) | `worktree-agent-a73ae095d4518575c`: `/planner` page (map, sites, 3-DOF feasibility, max range and cargo advice, 6-DOF flight and reliability jobs), static demo `planner.html`; docs/planner.md |
 | 10 | AI pilot training | queued until the Monte Carlo campaigns finish (CPU) | checkpoint at 5.0M / 50M steps in runs/ppo_landing (local PC only, not in git); `uv run plume train --when-idle` |
-| 11 | Safety-analysis export | starting | same agent as 9 |
+| 11 | Safety-analysis export | done (branch, PR pending) | same branch: `plume safety` (IIP vacuum + drag, ellipses, impacts, failure by phase, hazard areas; GeoJSON/KML/HTML), viewer overlay; docs/models/flight_safety.md. Next: store failure time/phase in MC records, debris + FTS model |

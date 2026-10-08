@@ -14,6 +14,7 @@
 import * as THREE from 'three';
 import { enuToW, Y_UP } from './coords.js';
 import { el } from './util.js';
+import { SafetyOverlay } from './safety_overlay.js';
 
 const C = {
   vel: 0xf2f2f2, vair: 0x8db4d4, wind: 0x8db4d4, thrust: 0xe3a46a, aero: 0x92c49a, grav: 0xb5a1da,
@@ -180,7 +181,15 @@ export class EngOverlay {
     this.targetRing = new FatLine(this.scene, C.dim, 96, { dash: true, loop: true, opacity: 0.9, width: 1.5 });
     this.cgMark = [0, 1, 2].map(() => new FatLine(this.scene, 0xf2f2f2, 2, { width: 1.5 }));
     this._buildDispersion();
+    this.safety = new SafetyOverlay(this.scene, r.meta); // IIP trace + hazard areas (meta.safety)
     this._buildHtml();
+    if (this.panel && this.safety.active) {
+      const key = el('div', { class: 'key' });
+      for (const [label, color, dash] of this.safety.keyRows()) {
+        key.append(el('div', { html: `<svg width="24" height="8"><line x1="0" y1="4" x2="24" y2="4" stroke="${color}" stroke-width="1.5"${dash ? ' stroke-dasharray="4 3"' : ''}/></svg>` }), el('span', { text: label }), el('em', { text: '' }));
+      }
+      this.panel.append(key);
+    }
     this.setEnabled(false);
   }
 
@@ -318,6 +327,7 @@ export class EngOverlay {
   // ------------------------------------------------------------------ per frame
   layout(origin, cam) {
     if (!this.enabled) return;
+    this.safety.layout(origin);
     const W = this.world, s = W.sample, st = W.state;
     if (!s || !st) return;
     const L = W.L;

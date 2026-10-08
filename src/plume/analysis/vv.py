@@ -55,6 +55,7 @@ AREAS: dict[str, str] = {
     "slosh": "Propellant slosh",
     "terrain": "Terrain",
     "mc": "Monte Carlo machinery",
+    "safety": "Flight-safety export",
     "other": "Other",
 }
 
@@ -70,6 +71,7 @@ RULES: list[tuple[str, str, str]] = [
     (r"test_slosh", r"", "slosh"),
     (r"test_dem", r"", "terrain"),
     (r"test_montecarlo", r"", "mc"),
+    (r"test_safety", r"", "safety"),
     (r"test_physics_models", r"atmosphere|wind", "atmosphere"),
     (r"test_physics_models", r"gravity|spherical_map", "earth"),
     (r"test_physics_models", r"mass_properties|cg_drops", "mass"),
@@ -101,6 +103,7 @@ MODEL_AREAS: dict[str, tuple[str, ...]] = {
     "mass": ("mass",),
     "slosh": ("slosh",),
     "terrain": ("terrain",),
+    "flight_safety": ("safety",),
 }
 
 

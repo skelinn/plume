@@ -161,9 +161,7 @@ def _lower_priority() -> None:
 
 
 def _nominal(ds: DispersionSpec):
-    from plume.config import load_mission, load_vehicle
-
-    from plume.config import MissionSpec, VehicleSpec
+    from plume.config import MissionSpec, VehicleSpec, load_mission, load_vehicle
 
     spec = load_mission(ds.mission)
     vehicle = load_vehicle(spec.vehicle)

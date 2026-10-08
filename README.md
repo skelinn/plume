@@ -22,7 +22,7 @@
   <img src="docs/assets/gridfins_closeup.jpg" width="49%" alt="Lattice grid fins deployed during descent">
 </p>
 
-<p align="center"><b><a href="https://skelinn.github.io/plume/">Open the live 3-D viewer</a></b> · <a href="https://skelinn.github.io/plume/reports/">verification and Monte Carlo reports</a></p>
+<p align="center"><b><a href="https://skelinn.github.io/plume/">Open the live 3-D viewer</a></b> · <a href="https://skelinn.github.io/plume/planner.html">mission planner (demo)</a> · <a href="https://skelinn.github.io/plume/reports/">verification, Monte Carlo and flight-safety reports</a></p>
 
 Plume flies a rigid-body rocket in MuJoCo with its own models of:
 
@@ -39,7 +39,8 @@ uv run plume hop demo_hop                  # 750 km cargo hop, fast fidelity (~1
 uv run plume hop real_hop --fidelity high  # Spaceport America -> Burns Flat, verification-grade models (~5 min)
 uv run plume mc real_hop --runs 64         # Monte Carlo at high fidelity: success probability, dispersion, sensitivity
 uv run plume vv-report                     # verification report: tests, NASA check cases, model status
-uv run plume viz                           # viewer at http://localhost:8765
+uv run plume viz                           # viewer at http://localhost:8765, mission planner at /planner
+uv run plume safety runs/mc/real_hop_high --replay data/replays/real_hop_high.plume.json.gz  # GeoJSON/KML safety export
 ```
 
 ---
@@ -98,6 +99,8 @@ Key verification results:
 | **Monte Carlo** | Dispersion files, parallel resumable runs (low priority, pausing while you game), Wilson intervals, CEP and 99 % ellipses, Spearman sensitivity, an HTML report, and a dispersion overlay in the viewer. |
 | **Landing environment** | `Plume/Landing-v0` (Gymnasium) with a four-stage curriculum, a PID/guidance baseline and PPO (Stable-Baselines3, CUDA). |
 | **Real flight data** | Flight-computer CSV import through a YAML column mapping, a Kalman/RTS filter, least-squares calibration of drag, impulse and parachute size, and real-vs-sim overlays. |
+| **Mission planner** | Browser page (`/planner`): pick two sites on a world map, a vehicle and a cargo mass; 3-DOF feasibility in seconds (range, max range for that cargo, propellant margin, apogee, flight time, cargo load), then a full 6-DOF flight or a screening Monte Carlo from the page. Static demo on GitHub Pages. |
+| **Flight-safety export** | `plume safety`: ground track, instantaneous impact point trace (vacuum and drag-aware), landing ellipses, failure impact points, failure probability by flight phase and hazard areas on WGS-84, as GeoJSON, KML and HTML. An engineering input to a licence application, not a certified analysis. |
 | **Viewer** | Monochrome interface with a physically based 3-D scene: HDR, sky scattering, volumetric exhaust with shock diamonds, and procedural models built from the vehicle YAML (lattice grid fins, carbon legs, regeneratively cooled bell). It adds an engineering view, model provenance, live streaming, and a real-vs-sim compare mode. |
 
 ## Quick tour
@@ -163,6 +166,24 @@ The bundled logs are synthetic "real" flights. A 6-DOF truth model with differen
 | I | replay information: fidelity, models, outcome |
 | Q | rendering quality |
 | C / L | compare two flights / live stream |
+
+### 6 · Mission planner
+
+```bash
+uv run plume viz          # then open http://localhost:8765/planner
+```
+
+Click a launch and a landing site (or search 35 bundled spaceports and cargo airports), choose the vehicle and cargo, and the planner flies the mission with the flight software's own 3-DOF planning models: drag-aware MECO with the planned entry burn, landing reserve, cargo g-limit. It answers in a few seconds and is honest about reach: beyond the vehicle's capability it gives the maximum range for that cargo and the cargo that would make the route feasible. On the real route it agrees with the 6-DOF high-fidelity flight to within 6 kg of propellant, 2 km of apogee and 0.1 g. From the same page you can fly the full 6-DOF mission (replay in the viewer) or run a 16–32-run reliability estimate, clearly a screening estimate, which also produces the flight-safety export. The [static demo](https://skelinn.github.io/plume/planner.html) uses a precomputed table. Details: [docs/planner.md](docs/planner.md).
+
+<p align="center"><img src="docs/assets/planner.jpg" width="80%" alt="Mission planner: Spaceport America to Burns Flat on a monochrome world map, feasibility panel and range-versus-cargo curve"></p>
+
+### 7 · Flight-safety export
+
+```bash
+uv run plume safety runs/mc/real_hop_high --replay data/replays/real_hop_high.plume.json.gz
+```
+
+Writes `safety.geojson`, `safety.kml` (Google Earth) and `safety.html`: the nominal ground track, the instantaneous impact point trace through powered flight (vacuum and drag-aware), the 50 % and 99 % landing ellipses, impact points of failed runs, failure probability by flight phase with 95 % intervals, and hazard areas (IIP corridor, landing zone, failure impact areas). For the reference campaign: 4.7 % (1.6–12.9 %) ascent failures, 0 % (0–5.7 %) in coast and descent, 7.8 % landing-phase failures, of which one lost the vehicle ([summary](docs/safety/real_hop_high/safety.html)). This is an engineering input to a licence application such as an FAA 14 CFR 450 flight safety analysis, **not a certified analysis**: there is no debris, flight-termination or casualty model. Details: [docs/models/flight_safety.md](docs/models/flight_safety.md).
 
 ## Monte Carlo: how dependable is the cargo hop?
 
@@ -240,6 +261,7 @@ Each model has a page in [docs/models/](docs/models/README.md) covering its equa
 | Propellant slosh | [slosh.md](docs/models/slosh.md) |
 | Sensors and navigation | [navigation.md](docs/models/navigation.md) |
 | Real terrain | [terrain.md](docs/models/terrain.md) |
+| Flight-safety export (IIP, dispersion, hazard areas) | [flight_safety.md](docs/models/flight_safety.md) |
 | Cargo-hop guidance, plus Monte Carlo findings | [guidance.md](docs/models/guidance.md) |
 
 `uv run pytest -q -n auto` runs the full suite (about 4 min), and `uv run pytest -m vv` runs the verification set.
@@ -305,12 +327,13 @@ src/plume/
                aero (strip), aerodb + aero_gen (database, generator, importers), gridfins,
                propulsion (engine, gimbal actuator, RCS PWM), slosh, sensors, recovery, mjcf
   control/     attitude, autopilot (landing), navigation (INS/GNSS EKF)
-  missions/    hop (planner, autopilot), targeting (impact prediction), scoring
-  analysis/    nasa_checkcases, montecarlo, vv (report)
+  missions/    hop (planner, autopilot), targeting (impact prediction), scoring,
+               planner (3-DOF feasibility), route (missions between any two sites)
+  analysis/    nasa_checkcases, montecarlo, vv (report), safety (GeoJSON/KML safety export)
   terrain/     heightmaps, Copernicus DEM, hazard maps
   envs/ rl/    Gymnasium landing env, hybrid PPO, idle supervisor, benchmark
   flightdata/  importer, Kalman/RTS, calibration
-  recording/   replay recorder + JSON schema          viz/   FastAPI + three.js viewer
+  recording/   replay recorder + JSON schema          viz/   FastAPI + three.js viewer, mission planner
 ```
 
 ## Limitations
@@ -328,4 +351,4 @@ src/plume/
 
 ## Contributing
 
-PRs are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Plume is MIT-licensed. The vendored three.js and uPlot are MIT, and IBM Plex is under the SIL OFL.
+PRs are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Plume is MIT-licensed. The vendored three.js and uPlot are MIT, IBM Plex is under the SIL OFL, and the planner's map data is Natural Earth (public domain).
