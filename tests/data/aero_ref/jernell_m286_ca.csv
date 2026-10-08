@@ -1,0 +1,14 @@
+# Axial-force coefficient (total measured, no base-pressure adjustment), M = 2.86, Re_d = 1.25e5.
+# Source: Jernell (NASA TM X-1658, 1968) symbols in Jorgensen, NASA TN D-6996 (1973), Fig. 10
+# (flat-faced cylinders) and Fig. 11 (cone-cylinders).  Manually digitised, reading uncertainty
+# about +-0.03.  alpha = 5 deg is face/nose first, 175 deg is base first.  TN D-6996 notes
+# support interference in CA.  Public domain (US Government work).
+body,alpha_deg,CA
+1,5,1.65
+2,5,1.65
+3,5,0.20
+4,5,0.20
+5,5,0.20
+3,175,-1.68
+4,175,-1.68
+5,175,-1.68

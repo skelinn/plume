@@ -74,7 +74,14 @@ class PointMassSim:
         aero_spec = vehicle.aero.model_copy()
         if cd_scale is not None:
             aero_spec.cd_scale = cd_scale
-        self.aero = Aero(aero_spec, vehicle.geometry)
+        if self.world.fidelity == "high":
+            # same aerodynamics as the 6-DOF sim (legs stowed: ascent / unpowered descent)
+            from plume.physics.sim import make_aero
+
+            v_aero = vehicle.model_copy(update={"aero": aero_spec})
+            self.aero = make_aero(v_aero, "high", legs_deployed=False)
+        else:
+            self.aero = Aero(aero_spec, vehicle.geometry)
         self.prop0 = vehicle.prop_initial if prop_mass is None else prop_mass
         self.engine = Engine(vehicle.engine, vehicle.prop_capacity)
         if thrust_curve is not None:
@@ -82,6 +89,10 @@ class PointMassSim:
         self.recovery = Recovery(vehicle.recovery)
         self.chute_scale = 1.0  # calibration multiplier on parachute Cd*A
         self.extra_cda = 0.0  # additional drag area, m^2 (e.g. deployed grid fins)
+        self.drag_scale = 1.0  # in-flight estimate of (true / modelled) drag
+        # sensed-acceleration limit (cargo g-limit), applied to thrust like the flight
+        # software's g-limited throttle; None = unlimited
+        self.accel_limit: float | None = None
         cargo = vehicle.cargo.mass if cargo_mass is None else cargo_mass
         self.m_dry = vehicle.mass.dry + cargo + vehicle.rcs.gas
 
@@ -111,16 +122,22 @@ class PointMassSim:
         va = v - self.wind_fn(r, alt) if self.wind_fn is not None else v
         speed = math.sqrt(va[0] * va[0] + va[1] * va[1] + va[2] * va[2])
         a_ng = np.zeros(3)
-        if thrust > 0:
-            a_ng += thrust / m * direction
+        drag = 0.0
         if self.aero.enabled and atm.density > 0 and speed > 1e-9:
             mach = speed / atm.speed_of_sound
             ca = self.aero.axial_coefficient(mach, not tail_first)
-            drag = 0.5 * atm.density * speed * speed * ca * self.aero.ref_area
+            drag = 0.5 * atm.density * speed * speed * ca * self.aero.ref_area * self.drag_scale
             a_ng -= drag / m * (va / speed)
+        if thrust > 0:
+            if self.accel_limit is not None:
+                allow = max(self.accel_limit - drag / m, 0.5 * G0) * m
+                if thrust > allow:
+                    mdot *= allow / thrust
+                    thrust = allow
+            a_ng += thrust / m * direction
         cda = cda + self.extra_cda
         if cda > 0 and atm.density > 0 and speed > 1e-9:
-            a_ng -= 0.5 * atm.density * cda * speed / m * va
+            a_ng -= 0.5 * atm.density * cda * self.drag_scale * speed / m * va
         a = a_ng + self.gravity.accel(r)
         if self._rotating:  # Earth-fixed world frame: Coriolis + centrifugal
             a = a + self.gravity.fictitious_accel(r, v)

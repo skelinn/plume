@@ -371,9 +371,10 @@ def resolve_profile(path: str) -> Path:
     p = Path(path)
     if p.exists():
         return p
-    from plume.config import CONFIG_DIR
+    from plume.config import config_root
 
-    for cand in (CONFIG_DIR / "winds" / path, CONFIG_DIR / "winds" / f"{path}.csv"):
+    d = config_root() / "winds"
+    for cand in (d / path, d / f"{path}.csv"):
         if cand.exists():
             return cand
     raise FileNotFoundError(f"sounding / wind profile not found: {path}")

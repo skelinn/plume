@@ -13,6 +13,7 @@ import math
 import numpy as np
 
 from plume.config import HopGuidanceSpec, VehicleSpec, WorldSpec
+from plume.constants import G0
 from plume.physics.gravity import SphericalGravity
 from plume.physics.pointmass import PointMassSim
 
@@ -99,6 +100,18 @@ class ImpactPredictor:
         self.guidance = guidance
         self.ground_altitude = ground_altitude
         self.gravity = self.pm.gravity
+        # the entry burn is flown g-limited (HopAutopilot._g_limited_throttle)
+        self.pm.accel_limit = guidance.cargo_g_limit * 0.92 * G0
+
+    def model_drag_accel(self, r, v_air, mass: float, tail_first: bool = True) -> float:
+        """Drag deceleration (m/s^2) the predictor's model gives, without its drag scale."""
+        pm = self.pm
+        atm = pm.atmosphere.at(self.gravity.altitude(r))
+        speed = float(np.linalg.norm(v_air))
+        if atm.density <= 0 or speed < 1e-6:
+            return 0.0
+        ca = pm.aero.axial_coefficient(speed / atm.speed_of_sound, not tail_first)
+        return 0.5 * atm.density * speed * speed * (ca * pm.aero.ref_area + pm.extra_cda) / mass
 
     def predict(self, r, v, prop: float, entry_burn: bool, t0: float = 0.0):
         """Predicted impact position (frame), or None if it does not come down."""

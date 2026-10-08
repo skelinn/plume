@@ -90,21 +90,35 @@ def test_rotating_frame_jacobi_energy_conserved():
         assert abs(sim.energy()["total"] - e0) / ke0 < 1e-6
 
 
+def _final_position(vehicle, dt):
+    w = _world().model_copy(update={"dt": dt, "atmosphere": True})
+    sim = RocketSim(vehicle, w)
+    p0 = sim.gravity.world_point(math.radians(28.5), math.radians(-80.6), 5000.0)
+    sim.reset(pos=p0, vel=(150.0, 40.0, 120.0))
+    sim.step(round(30.0 / dt))
+    return sim.state.com
+
+
 def test_convergence_with_timestep():
     """High fidelity evaluates every force at each RK4 stage: a tumbling, dragged
     trajectory converges at second order or better and the default step (5 ms) is
-    within a centimetre of the converged answer after 30 s."""
-    vehicle = make_test_vehicle(aero={"enabled": True}, rcs={"enabled": False, "propellant": 0.0})
-
-    def final(dt):
-        w = _world().model_copy(update={"dt": dt, "atmosphere": True})
-        sim = RocketSim(vehicle, w)
-        p0 = sim.gravity.world_point(math.radians(28.5), math.radians(-80.6), 5000.0)
-        sim.reset(pos=p0, vel=(150.0, 40.0, 120.0))
-        sim.step(round(30.0 / dt))
-        return sim.state.com
-
-    ref = final(0.00125)
-    errs = [float(np.linalg.norm(final(dt) - ref)) for dt in (0.02, 0.01, 0.005)]
+    within a centimetre of the converged answer after 30 s. (Smooth strip-theory aero
+    isolates the integrator; tabulated aero is checked separately below.)"""
+    vehicle = make_test_vehicle(
+        aero={"enabled": True, "model": "strip"}, rcs={"enabled": False, "propellant": 0.0}
+    )
+    ref = _final_position(vehicle, 0.00125)
+    errs = [float(np.linalg.norm(_final_position(vehicle, dt) - ref)) for dt in (0.02, 0.01, 0.005)]
     assert errs[1] < 0.35 * errs[0] and errs[2] < 0.35 * errs[1]  # ~4x per halving
     assert errs[2] < 0.01
+
+
+def test_tabulated_aero_step_size_floor():
+    """With the aero database the multilinear tables have slope discontinuities at grid
+    lines, which caps the integration order; the default 5 ms step still stays within
+    10 cm of a 1.25 ms reference after 30 s of tumbling flight."""
+    vehicle = make_test_vehicle(
+        aero={"enabled": True, "model": "database"}, rcs={"enabled": False, "propellant": 0.0}
+    )
+    ref = _final_position(vehicle, 0.00125)
+    assert float(np.linalg.norm(_final_position(vehicle, 0.005) - ref)) < 0.10

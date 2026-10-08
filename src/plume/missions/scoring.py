@@ -22,6 +22,8 @@ class MissionResult:
     final_tilt_deg: float
     ground_slope_deg: float
     score: float
+    landing_east_m: float = 0.0  # final position minus target, map east / north
+    landing_north_m: float = 0.0
 
     def summary(self) -> dict:
         return {
@@ -49,6 +51,11 @@ def score_mission(
         if t.contains(u, v):
             slope = t.slope_deg(u, v)
             break
+    # landing offset in the local horizontal frame at the target
+    g = mw.gravity
+    E = g.enu_at(mw.pad_b) if hasattr(g, "enu_at") else mw.local_frame(*mw.site_b)
+    d = st.pos - mw.pad_b
+    east, north = float(d @ E[:, 0]), float(d @ E[:, 1])
     reason = failure
     if not reason:
         if td is None:
@@ -88,4 +95,6 @@ def score_mission(
         final_tilt_deg=tilt,
         ground_slope_deg=slope,
         score=round(score, 2),
+        landing_east_m=east,
+        landing_north_m=north,
     )

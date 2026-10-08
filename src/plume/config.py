@@ -109,6 +109,9 @@ class EngineSpec(Spec):
     gimbal_rate_deg_s: float = Field(30.0, gt=0)
     gimbal_tau: float = Field(0.05, ge=0)
     gimbal_z: float = Field(0.5, description="gimbal pivot height in body frame")
+    misalignment_deg: tuple[float, float] = Field(
+        (0.0, 0.0), description="thrust-axis misalignment about body x / y (build tolerance), deg"
+    )
     nozzle_radius: float = Field(0.3, gt=0)
     # solid motors
     thrust_curve: Table | None = Field(None, description="[[t, F], ...] for solid motors")
@@ -178,6 +181,9 @@ class GridFinSpec(Spec):
     cd_delta: float = Field(2.0, ge=0, description="extra drag per rad^2 of deflection")
     max_deflection_deg: float = Field(20.0, gt=0)
     rate_deg_s: float = Field(45.0, gt=0)
+    open_area_ratio: float = Field(
+        0.9, gt=0, le=1, description="lattice open area / frontal area (transonic choking, high fidelity)"
+    )
     deploy: Literal["always", "on_command"] = "always"
 
 
@@ -209,6 +215,17 @@ class AeroSpec(Spec):
         default_factory=lambda: [[0.0, 1.2], [0.8, 1.3], [1.2, 1.6], [3.0, 1.5], [6.0, 1.4]]
     )
     cd_scale: float = Field(1.0, gt=0, description="multiplier on all coefficients (calibration)")
+    model: Literal["auto", "strip", "database"] = Field(
+        "auto", description="auto: strip theory in fast fidelity, aero database in high"
+    )
+    database: str | None = Field(
+        None, description="aero database (.npz from plume.physics.aerodb); generated if absent"
+    )
+    reverse_potential: float = Field(
+        1.0, ge=0, description="database generator: potential CN for base-first flow (Jorgensen)"
+    )
+    reynolds_effect: bool = Field(True, description="database generator: crossflow drag crisis")
+    roughness: float = Field(20e-6, ge=0, description="equivalent sand-grain roughness, m")
     stations: int = Field(10, ge=2, description="strip-theory stations along the hull")
 
 

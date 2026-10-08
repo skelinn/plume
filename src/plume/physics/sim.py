@@ -198,6 +198,44 @@ def _register_stage_sim(sim) -> None:
     _STAGE_SIMS[sid] = weakref.ref(sim)
 
 
+_AERO_DB_CACHE: dict[str, object] = {}
+
+
+def make_aero(vehicle, fidelity: str = "fast", legs_deployed: bool = True):
+    """Aerodynamic model for a vehicle: strip theory (fast) or the 6-component database
+    (``plume.physics.aerodb``; loaded from ``aero.database`` or generated from geometry
+    and cached per process). ``legs_deployed`` selects the database with or without the
+    leg struts and footpads in the flow (stowed legs lie flush along the hull)."""
+    spec = vehicle.aero
+    kind = spec.model if spec.model != "auto" else ("database" if fidelity == "high" else "strip")
+    if kind == "strip" or not spec.enabled:
+        return Aero(spec, vehicle.geometry)
+    from plume.physics.aerodb import AeroDatabase, AeroModelHiFi
+
+    if spec.database:
+        key = f"file:{spec.database}"
+        if key not in _AERO_DB_CACHE:
+            _AERO_DB_CACHE[key] = AeroDatabase.load(spec.database)
+    else:
+        # the database depends on geometry/fins/legs/options, not on masses or engine
+        key = (
+            vehicle.model_dump_json(include={"geometry", "legs"})
+            + spec.model_dump_json(exclude={"cd_scale"})
+            + f"legs={legs_deployed}"
+        )
+        if key not in _AERO_DB_CACHE:
+            from plume.physics.aero_gen.generate import generate_database
+
+            _AERO_DB_CACHE[key] = generate_database(
+                vehicle,
+                reverse_potential=spec.reverse_potential,
+                reynolds_effect=spec.reynolds_effect,
+                roughness=spec.roughness,
+                include_legs=legs_deployed,
+            )
+    return AeroModelHiFi.from_vehicle(vehicle, _AERO_DB_CACHE[key])
+
+
 class RocketSim:
     """6-DOF rocket simulation for a single vehicle.
 
@@ -223,6 +261,9 @@ class RocketSim:
         ground_height: Callable[[np.ndarray], float] | None = None,
     ):
         self.vehicle = vehicle
+        # what the flight software believes about the vehicle (= truth unless a Monte
+        # Carlo run disperses the truth); guidance and control read this, never .vehicle
+        self.nominal = vehicle
         self.world = world or WorldSpec()
         self.dt = self.world.dt
         self.gravity = gravity_from_world(self.world)
@@ -235,7 +276,10 @@ class RocketSim:
         self.tank_init = np.array([t.initial_mass for t in vehicle.tanks], dtype=float)
         nominal = self.mass_model.evaluate(self.tank_init, vehicle.rcs.gas)
         self.rcs = RCS(vehicle.rcs, vehicle, nominal.cg_z)
-        self.aero = Aero(vehicle.aero, vehicle.geometry)
+        self.aero = make_aero(vehicle, self.world.fidelity)
+        self.legs_deployed = True
+        self._aero_by_legs = {True: self.aero}
+        self._aero_thrust = hasattr(self.aero, "set_thrust")
         self.recovery = Recovery(vehicle.recovery)
         self.extra_forces: list = []
         self._rotating = bool(getattr(self.gravity, "rotating", False))
@@ -245,6 +289,8 @@ class RocketSim:
         self.grid_fins = (
             GridFins(vehicle.grid_fins, vehicle.geometry) if vehicle.grid_fins else None
         )
+        if self.grid_fins is not None and self.world.fidelity == "high":
+            self.grid_fins.enable_mach_effects()
         self.rail: dict | None = None
         self.has_ground = self.world.ground != "none" or bool(tiles)
         self._ground_height = ground_height or (lambda p: 0.0)
@@ -320,6 +366,8 @@ class RocketSim:
             self.grid_fins.reset()
         self.rail = None
         self.wind.reset(seed)
+        if hasattr(self, "legs_deployed"):
+            self.set_legs(True)
         self.controls = Controls()
         self.t = 0.0
         self.thrust = 0.0
@@ -475,6 +523,8 @@ class RocketSim:
             self.recovery.update(self.t, alt - self.launch_altitude, float(v_com @ up))
             cda = self.recovery.cd_area(self.t)
         ctx = (mp, f_t, tau_t, f_r, tau_r, wind, cda)
+        if self._aero_thrust:  # power-on base drag / supersonic retro-propulsion
+            self.aero.set_thrust(thrust)
 
         # --- forces at the start of the step: applied directly in fast mode; in high
         # fidelity they are re-evaluated at every RK4 stage by the passive callback
@@ -600,7 +650,9 @@ class RocketSim:
             v_air_b, omega_b, cgz, atm.density, atm.speed_of_sound
         )
         if self.grid_fins is not None:
-            f_g, tau_g = self.grid_fins.forces(v_air_b, omega_b, cgz, atm.density)
+            f_g, tau_g = self.grid_fins.forces(
+                v_air_b, omega_b, cgz, atm.density, sound_speed=atm.speed_of_sound
+            )
             f_a = f_a + f_g
             tau_a = tau_a + tau_g
         # externally modelled forces (verification vehicles, payload effects, ...)
@@ -664,6 +716,24 @@ class RocketSim:
             )
 
     # ------------------------------------------------------------------ observers
+    def set_legs(self, deployed: bool) -> None:
+        """Stow / deploy the landing legs (aerodynamics only: the collision geometry is
+        unchanged, legs only touch the ground when deployed in practice). With the
+        aero database the legs add their strut and footpad drag when deployed."""
+        deployed = bool(deployed)
+        if deployed == self.legs_deployed:
+            return
+        self.legs_deployed = deployed
+        if not hasattr(self.aero, "set_thrust"):
+            return  # strip theory does not model the legs
+        new = self._aero_by_legs.get(deployed)
+        if new is None:
+            new = make_aero(self.vehicle, self.world.fidelity, legs_deployed=deployed)
+            self._aero_by_legs[deployed] = new
+        new.cd_scale = self.aero.cd_scale
+        new.set_thrust(self.aero.thrust)
+        self.aero = new
+
     def _to_local(self, p: np.ndarray, vec: np.ndarray) -> np.ndarray:
         """Frame vector -> local East-North-Up at ``p`` (inverse of local_to_frame)."""
         g = self.gravity
@@ -782,6 +852,8 @@ class RocketSim:
         if self.grid_fins is not None:
             f["fins"] = self.grid_fins.delta.copy()
             f["fins_out"] = 1.0 if self.grid_fins.deployed else 0.0
+        if self.vehicle.legs.count > 0:
+            f["legs_out"] = 1.0 if self.legs_deployed else 0.0
         f_thrust, f_aero, v_air = self.last_forces
         f["v_air"] = v_air
         f["f_thrust"] = f_thrust

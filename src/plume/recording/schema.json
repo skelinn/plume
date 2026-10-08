@@ -150,7 +150,8 @@
         "beta": { "type": "array", "items": { "type": "number" }, "description": "sideslip, rad" },
         "aoa_total": { "type": "array", "items": { "type": "number" }, "description": "total angle between body axis and relative wind, rad" },
         "impact": { "type": "array", "items": { "$ref": "#/$defs/vec3" }, "description": "guidance's predicted impact point, world" },
-        "fins_out": { "type": "array", "items": { "type": "number" }, "description": "1 = grid fins deployed, 0 = stowed" }
+        "fins_out": { "type": "array", "items": { "type": "number" }, "description": "1 = grid fins deployed, 0 = stowed" },
+        "legs_out": { "type": "array", "items": { "type": "number" }, "description": "1 = landing legs deployed, 0 = stowed" }
       }
     },
     "events": {

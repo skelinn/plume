@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as _dt
 import gzip
 import json
+import math
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -103,10 +104,24 @@ class Recorder:
         return save_replay(self.to_dict(), path)
 
 
+def _finite(obj):
+    """JSON has no NaN/Infinity: non-finite floats become null."""
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _finite(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_finite(v) for v in obj]
+    return obj
+
+
 def save_replay(replay: Mapping[str, Any], path: str | Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(replay, separators=(",", ":")).encode()
+    try:
+        payload = json.dumps(replay, separators=(",", ":"), allow_nan=False).encode()
+    except ValueError:  # rare: only outcome metrics / diagnostics carry NaN
+        payload = json.dumps(_finite(replay), separators=(",", ":"), allow_nan=False).encode()
     if path.suffix == ".gz":
         with gzip.open(path, "wb", compresslevel=6) as f:
             f.write(payload)

@@ -55,6 +55,12 @@ class LandingAutopilot:
         self.max_decel = max_decel
         self.allow_ignition = True  # a mission planner may inhibit ignition (e.g. during re-entry)
         self.steer_max_mach = 1.0  # aero steering only when subsonic
+        self.supersonic_tilt_deg = 4.0  # tilt cap when steer_max_mach > 1 allows it
+        # experimental: ignite early when the predicted miss needs divert time. Off: in
+        # Monte Carlo it did not improve accuracy (near terminal velocity the aero force
+        # dominates the low-throttle thrust) - see docs/models/guidance.md
+        self.divert_aware = False
+        self.max_divert_time = 20.0  # s, caps how early a divert can start the burn
         self.att = AttitudeController(sim)
         self.reset()
 
@@ -91,7 +97,7 @@ class LandingAutopilot:
         g = float(np.linalg.norm(g_vec))
         up = st.up
         t_max, a_max = self._max_accel(st)
-        eng = sim.vehicle.engine
+        eng = sim.nominal.engine
         if self.a_v is None:
             self._plan_decel(a_max, g)
 
@@ -123,6 +129,29 @@ class LandingAutopilot:
             # ignite a little early to absorb throttle lag and the attitude transient
             lead = descent * (0.6 + 3 * eng.throttle_tau)
             wants = descent >= self.v_ref(max(h - lead, 0.0)) or h < 5.0
+            if not wants and self.divert_aware and descent > 0:
+                # divert-aware ignition: a hoverslam lasts only a few seconds; when the
+                # predicted miss is large, light early enough that the powered descent is
+                # long enough to fly the divert (bang-bang lateral profile at a fraction of
+                # the tilt authority). Found necessary by Monte Carlo (wind forecast error).
+                t_fall = max(h / descent, 1e-3)
+                if self.predicted_miss is not None:
+                    miss = self.predicted_miss - (self.predicted_miss @ up) * up
+                else:
+                    miss = rel_h + v_h * t_fall
+                m_h = float(np.linalg.norm(miss))
+                a_lat = min(0.4 * g, 0.8 * g * math.tan(self.max_tilt))  # lateral budget
+                t_div = min(2.0 * math.sqrt(m_h / a_lat), self.max_divert_time)
+                t_stop = max(descent - self.sink, 0.0) / self.a_v
+                if t_div > t_stop:
+                    h_stop = (descent * descent - self.sink * self.sink) / (2.0 * self.a_v)
+                    wants = h <= h_stop + lead + descent * (t_div - t_stop)
+                    if wants:
+                        # re-plan a gentler constant deceleration that starts now, so the
+                        # engine is throttled up (and can tilt) for the whole divert; near
+                        # terminal velocity drag carries the weight, so this costs little
+                        h_avail = max(h - lead - 20.0, 50.0)
+                        self.a_v = float(np.clip(descent * descent / (2.0 * h_avail), 0.5, self.a_v))
             if wants and self.allow_ignition and sim.prop_mass > 0:
                 self.phase = "burn"
             else:
@@ -132,13 +161,14 @@ class LandingAutopilot:
                 base = -v_air / speed if speed > 5.0 else up
                 if float(base @ up) < 0.2:  # never point the nose at the ground
                     base = up
+                cap = math.radians(12.0 if st.mach <= 1.0 else self.supersonic_tilt_deg)
                 if st.mach > self.steer_max_mach:
                     # supersonic: the tilt -> side-force relation is weak and not even
                     # monotonic; hold the stable engine-first attitude instead of steering
                     axis = base
                 else:
                     axis, _ = self.allocate(
-                        st, st.mass * a_h - self.disturbance, base, math.radians(12.0), 0.0, 0.0
+                        st, st.mass * a_h - self.disturbance, base, cap, 0.0, 0.0
                     )
                 self.last_axis = axis
                 _, rcs = self.att(st, axis, 0.0)
@@ -229,7 +259,7 @@ class LandingAutopilot:
             f_p, tau_p = fins.forces(v_b, np.zeros(3), st.cg_z, atm.density, np.zeros(fins.n))
             f_b = f_b + f_p
             tau_b = tau_b + tau_p
-            fin_cap = 0.7 * fins.capability(v_b, st.cg_z, atm.density)[:2]
+            fin_cap = 0.7 * fins.capability(v_b, st.cg_z, atm.density, atm.speed_of_sound)[:2]
         tau_left = np.sign(tau_b[:2]) * np.maximum(np.abs(tau_b[:2]) - fin_cap, 0.0)
         if fins is not None and fins.deployed:
             # ...and trimming with them pushes the top of the vehicle sideways:
@@ -246,7 +276,7 @@ class LandingAutopilot:
             need = np.abs(tau_left) / np.maximum(cap, 1e-9)
             info["trim"] = 0.0 if not tau_left.any() else float(need.max()) * 0.6
         if thrust > 0:
-            rz = self.sim.vehicle.engine.gimbal_z - st.cg_z
+            rz = self.sim.nominal.engine.gimbal_z - st.cg_z
             if abs(rz) > 1e-6:
                 # gimbal torque (0,0,rz) x F = (-rz Fy, rz Fx, 0) must cancel what the fins can't
                 side_f = np.array([-tau_left[1] / rz, tau_left[0] / rz, 0.0])

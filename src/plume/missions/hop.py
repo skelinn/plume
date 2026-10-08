@@ -211,10 +211,11 @@ class HopAutopilot:
             mw.pad_b,
             control_dt=CONTROL_DT,
             max_decel=min(2.0, guidance.cargo_g_limit - 1.5) * G0,
+            max_tilt_deg=25.0,
         )
         self.predictor = ImpactPredictor(
-            sim.vehicle,
-            sim.world,
+            sim.nominal,
+            getattr(sim, "nominal_world", sim.world),  # the forecast, not the truth
             guidance,
             ground_altitude=mw.terrain_height(*mw.site_b),
             cargo_mass=sim.cargo_mass,
@@ -225,6 +226,7 @@ class HopAutopilot:
         horiz = mw.local_frame(*mw.site_a) @ np.array([*mw.track, 0.0])
         self.downrange0 = horiz / np.linalg.norm(horiz)
         self._last_pred_t = -1e9
+        self._drag_prev = None  # (t, velocity) for in-flight drag estimation
         self._pred_hist: list[tuple[float, float]] = []  # (t, along-track error)
         self._meco_at: float | None = None
         self.predicted_impact: np.ndarray | None = None
@@ -233,6 +235,9 @@ class HopAutopilot:
     def _set_phase(self, phase: str, label: str, kind: str = "phase") -> None:
         self.phase = phase
         self.events.append((self.sim.t, kind, label))
+        if phase in ("pitch_kick", "kick_hold", "gravity_turn") and self.sim.legs_deployed:
+            self.sim.set_legs(False)  # legs fold flush against the hull for ascent
+            self.events.append((self.sim.t, "phase", "Legs stowed"))
         fins = self.sim.grid_fins
         if phase == "coast" and fins is not None and not fins.deployed:
             fins.deploy(True)  # stowed for ascent, deployed after MECO
@@ -272,8 +277,12 @@ class HopAutopilot:
         if self.phase == "kick_hold":
             axis = math.cos(self.kick) * self.up0 + math.sin(self.kick) * self.downrange0
             vhat = st.vel_com / max(np.linalg.norm(st.vel_com), 1e-6)
+            # wait until the flight path has pitched over as far as the kick. Compare the
+            # elevation only: a crosswind keeps the velocity slightly out of the kick plane
+            # (corrected later in the gravity turn), and a 3-D alignment test would then
+            # time out and loft the trajectory (found by Monte Carlo).
             if (
-                float(vhat @ axis) > math.cos(math.radians(0.5))
+                float(vhat @ self.up0) <= math.cos(self.kick) + math.radians(0.5) * math.sin(self.kick)
                 or t > self.rise + self.g.kick_time + 40
             ):
                 self._set_phase("gravity_turn", "Gravity turn")
@@ -363,6 +372,8 @@ class HopAutopilot:
         # the landing profile ignores drag: keep the engine off until the vehicle is in
         # its subsonic, near-terminal descent
         self.landing.allow_ignition = st.speed < 350.0 and st.agl < 8000.0
+        if self.landing.phase == "coast":
+            self._estimate_drag(st)
         if self.landing.phase == "coast" and t - self._last_pred_t >= 0.5:
             # unpowered descent: steer on the predicted impact point (drag + forecast wind)
             self._last_pred_t = t
@@ -376,7 +387,44 @@ class HopAutopilot:
         )
         if phase == "landing_burn" and not any(e[2] == "Landing burn" for e in self.events):
             self.events.append((t, "ignition", "Landing burn"))
+        # legs deploy in the last seconds (low speed / low height): deployed struts lead
+        # in engine-first flight and add a destabilising drag moment at speed
+        if (
+            phase in ("landing_burn", "landed")
+            and not sim.legs_deployed
+            and (st.speed < 50.0 or st.agl < 200.0 or phase == "landed")
+        ):
+            sim.set_legs(True)
+            self.events.append((t, "phase", "Legs deployed"))
         return throttle, gimbal, rcs, phase
+
+    def _estimate_drag(self, st) -> None:
+        """In-flight drag estimation (unpowered descent): the measured non-gravitational
+        deceleration along the air path over the predictor's modelled drag, low-pass
+        filtered, scales the predictor's drag. Absorbs aero-coefficient, density and
+        mass errors that would otherwise grow into a landing miss (found by Monte Carlo)."""
+        sim = self.sim
+        prev = self._drag_prev
+        self._drag_prev = (sim.t, st.vel_com.copy())
+        if prev is None or sim.thrust > 0:
+            return
+        dt = sim.t - prev[0]
+        if dt <= 0:
+            return
+        a = (st.vel_com - prev[1]) / dt - sim.gravity.accel(st.com)
+        if getattr(sim.gravity, "rotating", False):
+            a = a - sim.gravity.fictitious_accel(st.com, st.vel_com)
+        v_air = st.vel_com - self.landing.wind_forecast(st)
+        speed = float(np.linalg.norm(v_air))
+        if speed < 30.0 or st.q_dyn < 2_000.0:
+            return
+        meas = -float(a @ v_air) / speed
+        model = self.predictor.model_drag_accel(st.com, v_air, st.mass)
+        if model <= 0.5 or meas <= 0:
+            return
+        k = dt / (3.0 + dt)
+        est = self.predictor.pm.drag_scale + k * (meas / model - self.predictor.pm.drag_scale)
+        self.predictor.pm.drag_scale = float(np.clip(est, 0.5, 2.0))
 
     def _landing_reserve(self, st) -> float:
         """Propellant to keep for the landing burn: 1.5x the terminal velocity at the
@@ -388,7 +436,7 @@ class HopAutopilot:
         cda += self.predictor.pm.extra_cda
         v_term = math.sqrt(2.0 * dry * G0 / max(rho * cda, 1e-9))
         dv = 1.5 * v_term + 150.0
-        isp = sim.vehicle.engine.isp_sea_level
+        isp = sim.nominal.engine.isp_sea_level
         return dry * (math.exp(dv / (isp * G0)) - 1.0)
 
     def _precise_meco_check(self, st) -> None:
@@ -402,7 +450,7 @@ class HopAutopilot:
         err, _ = self._along_error(imp)
         self._pred_hist.append((t, err))
         # the engine's thrust tail-off after the cut adds ~T*tau of impulse: cut early
-        tail = self.sim.vehicle.engine.throttle_tau
+        tail = self.sim.nominal.engine.throttle_tau
         if err >= 0:
             self._meco_at = t
             return
@@ -427,6 +475,7 @@ def plan_ascent(
         update={"wind": (world or spec.world).wind.model_copy(update={"speed": 0.0})}
     )
     pm = PointMassSim(vehicle, world, cargo_mass=cargo)
+    pm.accel_limit = g.cargo_g_limit * 0.92 * G0  # the ascent is flown g-limited too
     up0 = gravity.up(mw.pad_a)
     horiz = mw.local_frame(*mw.site_a) @ np.array([*mw.track, 0.0])
     dr = horiz / np.linalg.norm(horiz)
@@ -550,6 +599,7 @@ class HopRun:
     result: MissionResult
     recorder: Recorder
     kick_deg: float
+    rise_time: float = 0.0
 
 
 def run_mission(
@@ -559,7 +609,16 @@ def run_mission(
     on_frame=None,
     kick_deg: float | None = None,
     fidelity: str | None = None,
+    vehicle=None,
+    nominal_vehicle=None,
+    nominal_world=None,
+    rise_time: float | None = None,
 ) -> HopRun:
+    """Fly a mission. ``vehicle`` overrides the simulated (true) vehicle and
+    ``nominal_vehicle`` what guidance believes (Monte Carlo); both default to the mission's
+    vehicle preset with the mission cargo. ``nominal_world`` is the forecast environment
+    guidance plans with (defaults to the simulated one); ``kick_deg`` + ``rise_time`` fix
+    the ascent plan instead of optimising it."""
     spec = load_mission(spec) if isinstance(spec, str) else spec
     spec, world, gravity = mission_frame(spec, fidelity)
     mw = MissionWorld(spec, gravity)
@@ -568,20 +627,24 @@ def run_mission(
         if cargo_mass is not None
         else (spec.cargo_mass if spec.cargo_mass is not None else None)
     )
-    vehicle = load_vehicle(spec.vehicle)
-    if cargo is not None:
+    truth = vehicle
+    vehicle = nominal_vehicle or load_vehicle(spec.vehicle)
+    if cargo is not None and nominal_vehicle is None:
         vehicle = vehicle.with_cargo(cargo)
+    truth = truth or vehicle
     cargo = vehicle.cargo.mass
-    rise = spec.guidance.rise_time
+    rise = rise_time if rise_time is not None else spec.guidance.rise_time
     if kick_deg is None:
         if spec.guidance.kick_angle_deg is not None:
             kick_deg = spec.guidance.kick_angle_deg
         else:
-            rise, kick_deg = plan_ascent(spec, mw, vehicle, cargo, world)
+            rise, kick_deg = plan_ascent(spec, mw, vehicle, cargo, nominal_world or world)
 
     sim = RocketSim(
-        vehicle, world, seed=seed, tiles=mw.ground_tiles(), ground_height=mw.ground_height
+        truth, world, seed=seed, tiles=mw.ground_tiles(), ground_height=mw.ground_height
     )
+    sim.nominal = vehicle
+    sim.nominal_world = nominal_world or world
     up = gravity.up(mw.pad_a)
     # feet exactly on the pad so the vehicle starts in contact (not "airborne")
     sim.reset(
@@ -657,4 +720,4 @@ def run_mission(
     rec.set_outcome(result.success, result.reason, asdict(result) | {"kick_deg": kick_deg})
     rec.meta["outcome"]["metrics"].pop("success", None)
     rec.meta["outcome"]["metrics"].pop("reason", None)
-    return HopRun(result, rec, kick_deg)
+    return HopRun(result, rec, kick_deg, rise)

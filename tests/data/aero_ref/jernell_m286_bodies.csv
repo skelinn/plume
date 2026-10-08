@@ -1,0 +1,12 @@
+# Bodies of revolution of NASA TN D-6996 (Jorgensen 1973) Fig. 9 / Jernell, NASA TM X-1658 (1968).
+# Columns: body number, l/d, l_N/d, nose shape, moment reference x_m/d from the nose tip.
+# Wind tunnel: Langley Unitary Plan Wind Tunnel, M = 2.86, Re_d = 1.25e5, transition fixed.
+body,l_over_d,lN_over_d,nose_shape,xm_over_d
+1,6,0,flat,3.0
+2,8,0,flat,4.0
+3,7,3,cone,3.5
+4,9,3,cone,4.5
+5,11,3,cone,5.5
+7,7,5,tangent_ogive,3.5
+8,9,5,tangent_ogive,4.5
+9,11,5,tangent_ogive,5.5

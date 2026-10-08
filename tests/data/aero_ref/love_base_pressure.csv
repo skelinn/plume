@@ -1,0 +1,15 @@
+# Base pressure coefficient of bodies of revolution with cylindrical afterbodies, turbulent
+# boundary layer, alpha = 0 ("Analysis of Love" curve).  Source: Love, NACA TN 3819 (1957),
+# as plotted in Jorgensen, NASA TN D-6996 (1973), Fig. 8.  Manually digitised (+-0.005).
+# Also used inside plume.physics.aero_gen.base (LOVE_BASE).  Public domain.
+mach,Cp_base
+1.0,-0.188
+1.5,-0.175
+2.0,-0.145
+2.5,-0.115
+3.0,-0.093
+4.0,-0.066
+5.0,-0.046
+6.0,-0.032
+7.0,-0.024
+8.0,-0.018

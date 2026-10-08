@@ -49,6 +49,7 @@ class Engine:
 
     def __init__(self, spec: EngineSpec, prop_capacity: float):
         self.spec = spec
+        self._misalign = np.radians(np.asarray(spec.misalignment_deg, dtype=float))
         self.gimbal_max = math.radians(spec.gimbal_max_deg)
         self.gimbal_rate = math.radians(spec.gimbal_rate_deg_s)
         if spec.type == "liquid":
@@ -111,7 +112,7 @@ class Engine:
         self.gimbal = g
 
     def direction(self) -> np.ndarray:
-        a, b = self.gimbal
+        a, b = self.gimbal + self._misalign
         ca = math.cos(a)
         return np.array([ca * math.sin(b), -math.sin(a), ca * math.cos(b)])
 

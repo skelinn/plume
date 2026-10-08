@@ -1,0 +1,13 @@
+# Wave-drag parameter (gamma/2) M^2 CA_W vs hypersonic similarity K = M d / l_N at alpha = 0.
+# Source: Jorgensen, NASA TN D-6996 (1973), Fig. 6: cones by Taylor-Maccoll theory (Ehret,
+# Rossow & Stevens, NACA TN 2250) and tangent ogives by the method of characteristics
+# (Rossow, NACA TN 2399).  Manually digitised (+-0.01).  Public domain.
+K,cone,ogive
+0.31,0.074,0.081
+0.6,0.210,0.208
+0.8,0.360,0.383
+1.0,0.514,0.562
+1.2,0.693,0.776
+1.4,0.885,1.016
+1.6,1.108,1.290
+1.8,1.360,1.590

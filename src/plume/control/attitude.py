@@ -33,7 +33,7 @@ class AttitudeController:
         self.zeta = damping
         self.roll_kd = roll_damping
         self.gimbal_max = sim.engine.gimbal_max
-        self.gimbal_z = sim.vehicle.engine.gimbal_z
+        self.gimbal_z = sim.nominal.engine.gimbal_z
 
     @staticmethod
     def pointing_error(state: State, desired_axis_world: np.ndarray) -> np.ndarray:
@@ -90,7 +90,9 @@ class AttitudeController:
         )
         fins = sim.grid_fins
         if fins is not None and fins.deployed:
-            _, tau_f = fins.forces(v_b, np.zeros(3), state.cg_z, atm.density, np.zeros(fins.n))
+            _, tau_f = fins.forces(
+                v_b, np.zeros(3), state.cg_z, atm.density, np.zeros(fins.n), atm.speed_of_sound
+            )
             tau = tau + tau_f
         return np.array([tau[0], tau[1], 0.0])
 
@@ -122,11 +124,12 @@ class AttitudeController:
             if fins.deployed and np.any(np.abs(remaining) > 1e-9):
                 atm = self.sim.atmosphere.at(state.altitude)
                 v_b = state.rot.T @ (state.vel_com - state.wind)
-                cmd, achieved = fins.allocate(remaining, v_b, state.cg_z, atm.density)
+                a_s = atm.speed_of_sound
+                cmd, achieved = fins.allocate(remaining, v_b, state.cg_z, atm.density, a_s)
                 fins.command(cmd)
                 remaining = remaining - achieved
                 # where the fins have real authority the RCS only assists (saves gas)
-                fin_cap = fins.capability(v_b, state.cg_z, atm.density)
+                fin_cap = fins.capability(v_b, state.cg_z, atm.density, a_s)
                 if np.all(fin_cap[:2] > 0.5 * self.sim.rcs.torque_cap[:2]):
                     rcs_gain = 0.3
             else:

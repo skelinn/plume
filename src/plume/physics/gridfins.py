@@ -40,7 +40,23 @@ class GridFins:
         self.tan = np.column_stack([-np.sin(th), np.cos(th), np.zeros(n)])
         self.max_defl = math.radians(spec.max_deflection_deg)
         self.rate = math.radians(spec.rate_deg_s)
+        self._mach = None  # (mach grid, cn_alpha multiplier, cd0 multiplier) when enabled
         self.reset()
+
+    def enable_mach_effects(self, open_area_ratio: float | None = None) -> None:
+        """High fidelity: transonic choking / supersonic lattice behaviour (see
+        ``plume.physics.aero_gen.gridfins``) scales ``cn_alpha`` and ``cd0`` with Mach."""
+        from plume.physics.aero_gen.gridfins import gridfin_cd0, gridfin_cn_alpha
+
+        oar = open_area_ratio if open_area_ratio is not None else self.spec.open_area_ratio
+        m = np.linspace(0.0, 8.0, 801)
+        self._mach = (m, gridfin_cn_alpha(m, oar), gridfin_cd0(m, oar))
+
+    def mach_factors(self, mach: float) -> tuple[float, float]:
+        if self._mach is None:
+            return 1.0, 1.0
+        m, cn, cd = self._mach
+        return float(np.interp(mach, m, cn)), float(np.interp(mach, m, cd))
 
     def reset(self) -> None:
         self.delta = np.zeros(self.n)
@@ -70,9 +86,11 @@ class GridFins:
         cg_z: float,
         rho: float,
         delta: np.ndarray | None = None,
+        sound_speed: float | None = None,
     ):
         """Force and torque (about the CG) in body axes (``delta`` overrides the current
-        deflections, e.g. for prediction)."""
+        deflections, e.g. for prediction). With Mach effects enabled and ``sound_speed``
+        given, the slope and drag follow the transonic/supersonic multipliers."""
         if not self.deployed or rho <= 0.0:
             return np.zeros(3), np.zeros(3)
         r = self._lever(cg_z)
@@ -85,26 +103,42 @@ class GridFins:
         u_t = np.einsum("ij,ij->i", v_loc, self.tan)
         k = 0.5 * rho * speed * self.area
         d = self.delta if delta is None else delta
-        f_t = k * s.cn_alpha * (d * v_ax - u_t)
-        f_ax = -k * (s.cd0 + s.cd_delta * d**2) * v_ax
+        kcn, kcd = (1.0, 1.0)
+        if self._mach is not None and sound_speed:
+            kcn, kcd = self.mach_factors(speed / sound_speed)
+        f_t = k * s.cn_alpha * kcn * (d * v_ax - u_t)
+        f_ax = -k * (s.cd0 * kcd + s.cd_delta * d**2) * v_ax
         f = f_t[:, None] * self.tan + f_ax[:, None] * np.array([0.0, 0.0, 1.0])
         return f.sum(axis=0), np.cross(r, f).sum(axis=0)
 
-    def torque_matrix(self, v_air_body: np.ndarray, cg_z: float, rho: float) -> np.ndarray:
+    def torque_matrix(
+        self, v_air_body: np.ndarray, cg_z: float, rho: float, sound_speed: float | None = None
+    ) -> np.ndarray:
         """3 x n: body torque per radian of deflection of each fin (current flow)."""
         if not self.deployed or rho <= 0.0:
             return np.zeros((3, self.n))
         speed = float(np.linalg.norm(v_air_body))
-        k = 0.5 * rho * speed * self.area * self.spec.cn_alpha * float(v_air_body[2])
+        kcn = self.mach_factors(speed / sound_speed)[0] if sound_speed else 1.0
+        k = 0.5 * rho * speed * self.area * self.spec.cn_alpha * kcn * float(v_air_body[2])
         return (np.cross(self._lever(cg_z), self.tan) * k).T
 
-    def capability(self, v_air_body: np.ndarray, cg_z: float, rho: float) -> np.ndarray:
+    def capability(
+        self, v_air_body: np.ndarray, cg_z: float, rho: float, sound_speed: float | None = None
+    ) -> np.ndarray:
         """Approximate max body torque per axis at full deflection."""
-        return np.abs(self.torque_matrix(v_air_body, cg_z, rho)).sum(axis=1) * self.max_defl
+        B = self.torque_matrix(v_air_body, cg_z, rho, sound_speed)
+        return np.abs(B).sum(axis=1) * self.max_defl
 
-    def allocate(self, torque: np.ndarray, v_air_body: np.ndarray, cg_z: float, rho: float):
+    def allocate(
+        self,
+        torque: np.ndarray,
+        v_air_body: np.ndarray,
+        cg_z: float,
+        rho: float,
+        sound_speed: float | None = None,
+    ):
         """Deflections (normalised) that best produce ``torque``; returns (cmd, achieved torque)."""
-        B = self.torque_matrix(v_air_body, cg_z, rho)
+        B = self.torque_matrix(v_air_body, cg_z, rho, sound_speed)
         if not np.any(B):
             return np.zeros(self.n), np.zeros(3)
         lam = 1e-6 * float(np.abs(B).max()) ** 2
