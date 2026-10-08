@@ -5,12 +5,14 @@
 //   compare=<idA>,<idB>   side-by-side comparison
 //   camera=chase|ground|top|free
 //   speed=<x>  t=<seconds>  channel=<live channel>  trail=speed|phase  paused=1
+//   eng=1 (engineering overlay)  quality=high|low  info=1
 //   capture=1&t0=&t1=&fps=   deterministic capture mode (see capture.js)
 
 import { el, clamp } from './util.js';
 import { Replay, fetchReplay } from './replay.js';
 import { ViewManager, suggestPartner } from './compare.js';
-import { Telemetry, seriesColors } from './telemetry.js';
+import { Telemetry, legendItems } from './telemetry.js';
+import { renderInfo } from './info.js';
 import { Transport } from './transport.js';
 import { LiveSession } from './live.js';
 import { setupCapture } from './capture.js';
@@ -35,18 +37,30 @@ const S = {
   ids: [],
   live: null, // {session, follow, status}
   token: 0,
+  eng: params.get('eng') === '1',
+  info: params.get('info') === '1',
+  quality: initialQuality(),
 };
 
-const manager = new ViewManager($('viewports'), { capture: CAPTURE });
+function initialQuality() {
+  const q = params.get('quality');
+  if (q === 'high' || q === 'low') return q;
+  try { const v = localStorage.getItem('plume.quality'); if (v === 'high' || v === 'low') return v; } catch { /* storage unavailable */ }
+  return 'high';
+}
+
+const manager = new ViewManager($('viewports'), { capture: CAPTURE, quality: S.quality, eng: S.eng });
 manager.camMode = S.cam;
-const telemetry = new Telemetry($('charts'), { onSeek: (t) => seek(t) });
-const transport = new Transport($('transport'), { onToggle: togglePlay, onSeek: (t) => seek(t), onLive: goLive });
+const telemetry = new Telemetry($('charts'), $('readouts'), { onSeek: (t) => seek(t) });
+const transport = new Transport($('transport'), {
+  onToggle: togglePlay, onSeek: (t) => seek(t), onLive: goLive, speeds: SPEEDS, onSpeed: (v) => { S.speed = v; },
+});
 
 // ------------------------------------------------------------------ small UI helpers
 function showOverlay(html, { spinner = true } = {}) {
   const o = $('overlay');
   o.hidden = false;
-  o.replaceChildren(el('div', { class: 'ov-card' }, spinner ? el('div', { class: 'spinner' }) : null, el('div', { class: 'ov-text', html })));
+  o.replaceChildren(el('div', { class: 'ov-card' }, el('div', { class: 'ov-text', html }), spinner ? el('div', { class: 'progress' }) : null));
 }
 const hideOverlay = () => { $('overlay').hidden = true; };
 let toastTimer = 0;
@@ -64,9 +78,9 @@ function fillSelect(sel, selected, includeLive) {
   for (const r of S.list) titles.set(r.title, (titles.get(r.title) || 0) + 1);
   for (const r of S.list) {
     const label = titles.get(r.title) > 1 ? `${r.title} — ${r.id}` : r.title;
-    sel.append(el('option', { value: r.id, text: `${r.source === 'real' ? '◆ ' : ''}${label}` }));
+    sel.append(el('option', { value: r.id, text: `${label}${r.source === 'real' && !/real/i.test(label) ? ' (real)' : ''}` }));
   }
-  if (includeLive) sel.append(el('option', { value: LIVE_ID, text: '● Live stream' }));
+  if (includeLive) sel.append(el('option', { value: LIVE_ID, text: 'Live stream' }));
   if (selected) sel.value = selected;
 }
 
@@ -85,6 +99,8 @@ function syncUrl() {
   else if (S.ids.length) p.set('replay', S.ids[0]);
   p.set('camera', S.cam);
   if (S.trail !== 'speed') p.set('trail', S.trail);
+  if (S.eng) p.set('eng', '1');
+  if (S.info) p.set('info', '1');
   if (S.live && params.get('channel')) p.set('channel', params.get('channel'));
   history.replaceState(null, '', `?${p}`);
 }
@@ -96,11 +112,29 @@ function defaultSpeed(duration) {
 
 function setSpeed(v) {
   S.speed = v;
-  const sel = $('sel-speed');
-  if (![...sel.options].some((o) => +o.value === v)) {
-    sel.append(el('option', { value: v, text: `${v}×` }));
-  }
-  sel.value = String(v);
+  transport.setSpeed(v);
+}
+
+function setEng(on) {
+  S.eng = !!on;
+  manager.setEng(S.eng);
+  $('btn-eng').setAttribute('aria-pressed', String(S.eng));
+  syncUrl();
+}
+
+function setInfo(on) {
+  S.info = !!on && S.replays.length > 0;
+  $('info').hidden = !S.info;
+  $('btn-info').setAttribute('aria-pressed', String(S.info));
+  if (S.info) renderInfo($('info'), S.replays, S.labels || [], () => setInfo(false));
+  syncUrl();
+}
+
+function setQuality(q) {
+  S.quality = q;
+  manager.setQuality(q);
+  for (const b of document.querySelectorAll('#quality-seg button')) b.classList.toggle('on', b.dataset.q === q);
+  try { localStorage.setItem('plume.quality', q); } catch { /* storage unavailable */ }
 }
 
 // ------------------------------------------------------------------ opening replays
@@ -111,7 +145,8 @@ async function install(replays, ids, { keepTime = false } = {}) {
   const labels = replays.length > 1
     ? replays.map((r) => (replays.every((x) => x.source === replays[0].source) ? r.title : r.source.toUpperCase()))
     : [replays[0].title];
-  const warnings = await manager.show(replays, replays.length > 1 ? labels.map((l) => l.toUpperCase()) : null);
+  S.labels = labels;
+  const warnings = await manager.show(replays, replays.length > 1 ? labels.map((l, i) => `${String.fromCharCode(65 + i)}  ${l.toUpperCase()}`) : null);
   if (token !== S.token) return;
   manager.setTrailMode(S.trail);
   telemetry.setReplays(replays, labels);
@@ -124,17 +159,17 @@ async function install(replays, ids, { keepTime = false } = {}) {
   if (!S.speedFromUrl) setSpeed(defaultSpeed(tEnd - t0));
   else setSpeed(+params.get('speed') || 1);
   S.speedFromUrl = false;
-  $('btn-compare').classList.toggle('on', replays.length > 1);
+  $('btn-compare').setAttribute('aria-pressed', String(replays.length > 1));
   $('field-b').hidden = replays.length < 2;
   setCamera(S.cam);
+  setInfo(S.info);
   hideOverlay();
   for (const w of warnings) toast(w);
   syncUrl();
 }
 
 function renderLegend(replays, labels) {
-  const colors = seriesColors(replays);
-  $('legend').replaceChildren(...replays.map((r, i) => el('span', { class: 'lg' }, el('i', { style: { background: colors[i] } }), labels[i])));
+  $('legend').replaceChildren(...legendItems(labels.map((l, i) => String.fromCharCode(65 + i))));
   $('legend').hidden = replays.length < 2;
 }
 
@@ -264,10 +299,7 @@ function tick(now) {
 
 // ------------------------------------------------------------------ wiring
 function initUi() {
-  const speedSel = $('sel-speed');
-  for (const s of SPEEDS) speedSel.append(el('option', { value: s, text: `${s}×` }));
-  speedSel.value = '1';
-  speedSel.addEventListener('change', () => { S.speed = +speedSel.value; });
+  transport.setSpeed(1);
   $('cam-seg').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-cam]');
     if (b) setCamera(b.dataset.cam);
@@ -280,16 +312,29 @@ function initUi() {
   $('sel-b').addEventListener('change', () => openIds([S.ids[0], $('sel-b').value]));
   $('btn-compare').addEventListener('click', toggleCompare);
   $('btn-trail').addEventListener('click', toggleTrail);
-  $('btn-tele').addEventListener('click', () => document.body.classList.toggle('tele-open'));
+  $('btn-eng').addEventListener('click', () => setEng(!S.eng));
+  $('btn-info').addEventListener('click', () => setInfo(!S.info));
+  $('quality-seg').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-q]');
+    if (b) setQuality(b.dataset.q);
+  });
+  $('btn-tele').addEventListener('click', toggleTele);
   $('btn-help').addEventListener('click', () => { $('help').hidden = !$('help').hidden; });
-  $('help').addEventListener('click', () => { $('help').hidden = true; });
+  $('help').addEventListener('click', (e) => { if (e.target === $('help') || e.target.closest('[data-close]')) $('help').hidden = true; });
   document.addEventListener('keydown', onKey);
-  $('btn-trail').textContent = `Trail: ${S.trail}`;
+  $('btn-trail').textContent = `Trail ${S.trail}`;
+  $('btn-eng').setAttribute('aria-pressed', String(S.eng));
+  for (const b of document.querySelectorAll('#quality-seg button')) b.classList.toggle('on', b.dataset.q === S.quality);
+}
+
+function toggleTele() {
+  const on = document.body.classList.toggle('tele-open');
+  $('btn-tele').setAttribute('aria-pressed', String(on));
 }
 
 function toggleTrail() {
   S.trail = S.trail === 'speed' ? 'phase' : 'speed';
-  $('btn-trail').textContent = `Trail: ${S.trail}`;
+  $('btn-trail').textContent = `Trail ${S.trail}`;
   manager.setTrailMode(S.trail);
   syncUrl();
 }
@@ -316,6 +361,9 @@ function onKey(e) {
   else if (k === 'c' || k === 'C') toggleCompare();
   else if (k === 'l' || k === 'L') { if (S.live) goLive(); else startLive(); }
   else if (k === 't' || k === 'T') toggleTrail();
+  else if (k === 'e' || k === 'E') setEng(!S.eng);
+  else if (k === 'i' || k === 'I') setInfo(!S.info);
+  else if (k === 'q' || k === 'Q') setQuality(S.quality === 'high' ? 'low' : 'high');
   else if (k === 'Home') seek(totalRange()[0]);
   else if (k === 'End') seek(totalRange()[1]);
   else if (k === ']' || k === '[') {
@@ -324,7 +372,7 @@ function onKey(e) {
     setSpeed(SPEEDS[j]);
   } else if (k === 'h' || k === 'H') document.body.classList.toggle('chrome-hidden');
   else if (k === '?' || k === '/') $('help').hidden = !$('help').hidden;
-  else if (k === 'Escape') $('help').hidden = true;
+  else if (k === 'Escape') { $('help').hidden = true; if (S.info) setInfo(false); document.body.classList.remove('tele-open'); }
 }
 
 // ------------------------------------------------------------------ capture hooks
@@ -374,6 +422,23 @@ async function boot() {
 }
 
 // handy for debugging from the console / test scripts
-window.plume = { S, manager, telemetry, transport };
+/**
+ * Debug / screenshot helper: free camera looking at a point of the vehicle.  `target` and `cam` are
+ * in vehicle mesh space (metres from the hull base; +y = vehicle axis), e.g. closeup([0, 11, 0], [2, 10, 2]).
+ */
+function closeup(target, cam, fov = 50) {
+  setCamera('free');
+  const v = manager.primary;
+  if (!v?.world) return;
+  const w = v.world, q = w.quatW, half = w.L / 2;
+  const T = w.axis.clone().set(target[0], target[1] - half, target[2]).applyQuaternion(q);
+  const C = w.axis.clone().set(cam[0], cam[1] - half, cam[2]).applyQuaternion(q);
+  v.rig.persp.position.copy(C);
+  v.rig.controls.target.copy(T);
+  v.rig._freeInit = true;
+  v.rig.freeFov = fov;
+}
+
+window.plume = { S, manager, telemetry, transport, setEng, setInfo, setQuality, seek, closeup, setCamera };
 
 boot();

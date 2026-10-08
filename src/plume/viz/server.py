@@ -42,6 +42,7 @@ from plume.terrain.heightmap import Heightmap
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("text/javascript", ".mjs")
 mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("font/woff2", ".woff2")
 
 STATIC_DIR = Path(__file__).with_name("static")
 

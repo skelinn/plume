@@ -28,12 +28,37 @@ export function quatEnuToW(q, out = new THREE.Quaternion()) {
 /**
  * Scene geometry model: flat Earth, or a sphere of radius R whose tangent frame at the launch
  * site is the ENU frame (centre at (0,0,-R) ENU = (0,-R,0) W).
+ *
+ * "wgs84" scenes (high-fidelity runs) are treated as a sphere of radius `earth_radius`, corrected
+ * by `scene.map_grid`: per grid node, `dp` = true ellipsoid ENU surface point minus the sphere's
+ * (at h = 0) and `dn` = true unit normal minus the sphere normal.  surface() bilinearly
+ * interpolates both (clamped to the grid), which reproduces the ellipsoid to ~1.5 cm.  up(),
+ * altitude() and toMap() keep the plain sphere (sub-degree / sub-100 m: fine for camera and
+ * labels; readouts use the replay's recorded alt).
  */
 export class Frame {
   constructor(scene = {}) {
-    this.spherical = scene.frame === 'spherical' && scene.earth_radius > 0;
+    this.kind = scene.frame || 'flat';
+    this.spherical = (scene.frame === 'spherical' || scene.frame === 'wgs84') && scene.earth_radius > 0;
     this.R = this.spherical ? scene.earth_radius : Infinity;
     this.centerW = new THREE.Vector3(0, this.spherical ? -this.R : 0, 0);
+    this.origin = scene.origin || null;
+    const g = scene.frame === 'wgs84' ? scene.map_grid : null;
+    this.grid = g && g.nu >= 2 && g.nv >= 2 && g.dp?.length === 3 * g.nu * g.nv && g.dn?.length === 3 * g.nu * g.nv ? g : null;
+    this._c = [0, 0, 0];
+  }
+
+  /** Bilinear interpolation of a 3-vector grid field (dp or dn) at map (u, v), clamped. */
+  _bilerp(field, u, v, out) {
+    const g = this.grid;
+    const fi = Math.min(Math.max((u - g.u0) / g.du, 0), g.nu - 1);
+    const fj = Math.min(Math.max((v - g.v0) / g.dv, 0), g.nv - 1);
+    const i = Math.min(Math.floor(fi), g.nu - 2), j = Math.min(Math.floor(fj), g.nv - 2);
+    const tx = fi - i, ty = fj - j;
+    const k00 = 3 * (j * g.nu + i), k10 = k00 + 3, k01 = k00 + 3 * g.nu, k11 = k01 + 3;
+    const w00 = (1 - tx) * (1 - ty), w10 = tx * (1 - ty), w01 = (1 - tx) * ty, w11 = tx * ty;
+    for (let c = 0; c < 3; c++) out[c] = field[k00 + c] * w00 + field[k10 + c] * w10 + field[k01 + c] * w01 + field[k11 + c] * w11;
+    return out;
   }
 
   /** Map-coordinate terrain point (u east, v north arc length, height h) -> W-space. */
@@ -45,9 +70,19 @@ export class Frame {
       const th = s / this.R, st = Math.sin(th);
       nx = (st * u) / s; ny = (st * v) / s; nz = Math.cos(th);
     }
-    const r = this.R + h;
-    // ENU: c + r*n with c = (0,0,-R); then remap to W
-    const ex = r * nx, ey = r * ny, ez = -this.R + r * nz;
+    if (!this.grid) {
+      const r = this.R + h;
+      // ENU: c + r*n with c = (0,0,-R); then remap to W
+      return out.set(r * nx, -this.R + r * nz, -(r * ny));
+    }
+    const R = this.R, c = this._c;
+    this._bilerp(this.grid.dp, u, v, c);
+    const px = R * nx + c[0], py = R * ny + c[1], pz = -R + R * nz + c[2];
+    this._bilerp(this.grid.dn, u, v, c);
+    let mx = nx + c[0], my = ny + c[1], mz = nz + c[2];
+    const l = Math.hypot(mx, my, mz) || 1;
+    mx /= l; my /= l; mz /= l;
+    const ex = px + h * mx, ey = py + h * my, ez = pz + h * mz;
     return out.set(ex, ez, -ey);
   }
 

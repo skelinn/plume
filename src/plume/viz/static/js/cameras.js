@@ -69,7 +69,7 @@ export class CameraRig {
     if (!MODES.includes(mode) || mode === this.mode) return;
     this.mode = mode;
     this.controls.enabled = mode === 'free';
-    if (mode === 'free') this._freeInit = false;
+    if (mode === 'free') { this._freeInit = false; this.freeFov = 50; }
   }
 
   getUserState() {
@@ -158,7 +158,7 @@ export class CameraRig {
         this.controls.target.set(0, 0, 0);
         this._freeInit = true;
       }
-      this.controls.minDistance = 0.3 * L;
+      this.controls.minDistance = 0.04 * L;
       this.controls.maxDistance = 3e7;
       this.controls.zoomSpeed = 1.2;
       // keep orbit "up" aligned with the local vertical (matters on a spherical Earth)
@@ -170,7 +170,7 @@ export class CameraRig {
       this.controls.update();
       camW = origin.clone().add(cam.position);
       focus = cam.position.distanceTo(this.controls.target);
-      cam.fov = 50;
+      cam.fov = this.freeFov || 50;
     }
 
     const cam = this.camera;

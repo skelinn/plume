@@ -14,9 +14,11 @@ export function suggestPartner(a, list) {
 }
 
 export class ViewManager {
-  constructor(root, { capture = false } = {}) {
+  constructor(root, { capture = false, quality = 'high', eng = false } = {}) {
     this.root = root;
     this.capture = capture;
+    this.quality = quality;
+    this.eng = eng;
     this.views = [];
     this.camMode = 'chase';
     this.syncing = false;
@@ -34,7 +36,7 @@ export class ViewManager {
     for (let i = 0; i < replays.length; i++) {
       const box = el('div', { class: 'viewport' });
       this.root.append(box);
-      const view = new View(box, { capture: this.capture, compact: replays.length > 1, tag: tags?.[i] });
+      const view = new View(box, { capture: this.capture, compact: replays.length > 1, tag: tags?.[i], quality: this.quality, eng: this.eng });
       view.setCamera(this.camMode);
       view.rig.onUserChange = (rig) => this._sync(view, rig);
       this.views.push(view);
@@ -56,6 +58,16 @@ export class ViewManager {
   setCamera(mode) {
     this.camMode = mode;
     for (const v of this.views) v.setCamera(mode);
+  }
+
+  setQuality(q) {
+    this.quality = q;
+    for (const v of this.views) v.setQuality(q);
+  }
+
+  setEng(on) {
+    this.eng = on;
+    for (const v of this.views) v.setEng(on);
   }
 
   setTrailMode(mode) {

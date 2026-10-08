@@ -2,6 +2,7 @@
 
     uv run python scripts/make_gifs.py            # all
     uv run python scripts/make_gifs.py hop        # one
+    PLUME_GIF_OUT=/tmp/gifs uv run python scripts/make_gifs.py landing   # elsewhere
 
 Starts ``plume viz`` on a spare port, drives headless Chromium (Playwright) through
 ``window.plumeCapture`` frame by frame, and writes optimised GIFs to docs/assets/.
@@ -10,6 +11,7 @@ Starts ``plume viz`` on a spare port, drives headless Chromium (Playwright) thro
 from __future__ import annotations
 
 import io
+import os
 import socket
 import subprocess
 import sys
@@ -19,7 +21,7 @@ from pathlib import Path
 
 from PIL import Image
 
-OUT = Path("docs/assets")
+OUT = Path(os.environ.get("PLUME_GIF_OUT", "docs/assets"))
 W, H = 640, 360
 
 # name: (query, playback fps of the GIF)

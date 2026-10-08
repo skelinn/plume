@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import re
 
 import numpy as np
 import pytest
@@ -12,7 +13,7 @@ from fastapi.testclient import TestClient
 from plume.recording import Recorder
 from plume.terrain import Heightmap
 from plume.viz.live import LiveStreamer
-from plume.viz.server import create_app
+from plume.viz.server import STATIC_DIR, create_app
 
 VEHICLE = {"name": "t", "length": 5.0, "diameter": 1.0}
 
@@ -65,6 +66,13 @@ def test_index_and_static(env):
         "/static/vendor/uplot/uPlot.esm.js",
         "/static/vendor/uplot/uPlot.min.css",
         "/static/js/main.js",
+        "/static/js/atmosphere.js",
+        "/static/js/post.js",
+        "/static/js/engineering.js",
+        "/static/js/models/gridfin.js",
+        "/static/js/models/legs.js",
+        "/static/js/models/engine.js",
+        "/static/js/models/hull.js",
         "/static/css/style.css",
     ):
         r = client.get(path)
@@ -73,6 +81,25 @@ def test_index_and_static(env):
             # ES modules are rejected by browsers unless served as a JavaScript MIME type.
             assert "javascript" in r.headers["content-type"], path
     assert client.get("/static/nope.js").status_code == 404
+
+
+def test_viewer_assets_are_self_contained(env):
+    """Fonts are vendored (no CDN at runtime) and served with a font MIME type."""
+    client, *_ = env
+    for name in ("ibm-plex-sans-latin-400-normal.woff2", "ibm-plex-mono-latin-500-normal.woff2"):
+        r = client.get(f"/static/vendor/fonts/{name}")
+        assert r.status_code == 200, name
+        assert r.headers["content-type"].startswith("font/woff2"), name
+        assert r.content[:4] == b"wOF2"
+    css = client.get("/static/css/style.css").text
+    html = client.get("/").text
+    for text in (css, html):
+        assert "https://" not in text and "http://" not in text.replace("http://www.w3.org", "")
+    # every relative ES-module import in the viewer resolves
+    for js in (STATIC_DIR / "js").rglob("*.js"):
+        for spec in re.findall(r"from '(\.{1,2}/[^']+)'", js.read_text(encoding="utf-8")):
+            target = (js.parent / spec).resolve()
+            assert target.is_file(), f"{js.name}: {spec}"
 
 
 def test_list_replays(env):

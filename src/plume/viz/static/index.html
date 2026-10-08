@@ -4,8 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
-  <title>Plume — Flight Viewer</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2c4 6 7 10 7 16a7 7 0 0 1-14 0c0-6 3-10 7-16z' fill='%23ff8a30'/%3E%3C/svg%3E">
+  <title>Plume Flight Viewer</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0a0a'/%3E%3Cpath d='M16 5v17M11 27h10' stroke='%23f2f2f2' stroke-width='3'/%3E%3C/svg%3E">
+  <link rel="preload" href="/static/vendor/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/vendor/fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/vendor/uplot/uPlot.min.css">
   <link rel="stylesheet" href="/static/css/style.css">
   <script type="importmap">
@@ -20,28 +22,53 @@
 </head>
 <body>
   <header id="topbar">
-    <div class="brand"><svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true"><path d="M16 2c4 6 7 10 7 16a7 7 0 0 1-14 0c0-6 3-10 7-16z" fill="currentColor"/></svg><b>PLUME</b><small>flight viewer</small></div>
-    <label class="field"><span>Replay</span><select id="sel-a" aria-label="Replay"></select></label>
-    <button id="btn-compare" class="btn" title="Compare two replays (C)">Compare</button>
-    <label class="field" id="field-b" hidden><span>vs</span><select id="sel-b" aria-label="Comparison replay"></select></label>
-    <div class="spacer"></div>
-    <div class="seg" id="cam-seg" role="group" aria-label="Camera">
-      <button data-cam="chase" title="Chase camera (1)">Chase</button>
-      <button data-cam="ground" title="Ground observer (2)">Ground</button>
-      <button data-cam="top" title="Top-down (3)">Top</button>
-      <button data-cam="free" title="Free orbit (4)">Free</button>
+    <div class="wordmark" aria-label="Plume">PLUME</div>
+    <div class="tb-group">
+      <label class="field"><span class="lbl">Replay</span><select id="sel-a" aria-label="Replay"></select></label>
+      <label class="field" id="field-b" hidden><span class="lbl">vs</span><select id="sel-b" aria-label="Comparison replay"></select></label>
     </div>
-    <label class="field"><span>Speed</span><select id="sel-speed" aria-label="Playback speed"></select></label>
-    <button id="btn-trail" class="btn hide-sm" title="Trail colouring (T)">Trail: speed</button>
-    <button id="btn-tele" class="btn show-sm" title="Telemetry">Telemetry</button>
-    <button id="btn-help" class="btn icon" title="Shortcuts (?)" aria-label="Help">?</button>
+    <div class="spacer"></div>
+    <div class="tb-group">
+      <span class="lbl hide-md">Camera</span>
+      <div class="seg" id="cam-seg" role="group" aria-label="Camera">
+        <button data-cam="chase" title="Chase camera (1)">Chase</button>
+        <button data-cam="ground" title="Ground tracking camera (2)">Ground</button>
+        <button data-cam="top" title="Top-down (3)">Top</button>
+        <button data-cam="free" title="Free orbit (4)">Free</button>
+      </div>
+    </div>
+    <div class="tb-group">
+      <span class="lbl hide-md">View</span>
+      <div class="seg" role="group" aria-label="View">
+        <button id="btn-eng" title="Engineering overlay (E)" aria-pressed="false">Eng</button>
+        <button id="btn-info" title="Replay information (I)" aria-pressed="false">Info</button>
+        <button id="btn-compare" title="Compare two replays (C)" aria-pressed="false">Compare</button>
+        <button id="btn-trail" class="hide-sm" title="Trail colouring (T)">Trail</button>
+      </div>
+    </div>
+    <div class="tb-group hide-sm">
+      <span class="lbl hide-md">Quality</span>
+      <div class="seg" id="quality-seg" role="group" aria-label="Render quality">
+        <button data-q="high" title="High quality (Q)">High</button>
+        <button data-q="low" title="Low quality (Q)">Low</button>
+      </div>
+    </div>
+    <button id="btn-tele" class="tb-btn show-md" title="Telemetry" aria-pressed="false">Data</button>
+    <button id="btn-help" class="tb-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
   </header>
 
   <main id="stage">
     <section id="viewports" aria-label="3D view"></section>
+    <aside id="info" aria-label="Replay information" hidden></aside>
     <aside id="telemetry" aria-label="Telemetry">
-      <div id="legend" class="legend" hidden></div>
-      <div id="charts"></div>
+      <section class="panel" id="readouts-panel">
+        <header class="panel-head"><span class="lbl">State</span><span class="legend" id="legend"></span></header>
+        <div id="readouts"></div>
+      </section>
+      <section class="panel" id="charts-panel">
+        <header class="panel-head"><span class="lbl">Telemetry</span><span class="hint">click to seek</span></header>
+        <div id="charts"></div>
+      </section>
     </aside>
   </main>
 
@@ -50,21 +77,24 @@
   <div id="overlay" hidden></div>
   <div id="toast" role="status"></div>
   <div id="help" hidden>
-    <div class="help-card">
-      <h2>Shortcuts</h2>
+    <div class="modal" role="dialog" aria-label="Keyboard shortcuts">
+      <header class="modal-head"><span class="lbl">Keyboard shortcuts</span><button class="x" data-close aria-label="Close">Esc</button></header>
       <dl>
-        <dt>Space</dt><dd>play / pause</dd>
-        <dt>← →</dt><dd>step one frame (Shift: one second)</dd>
-        <dt>1 2 3 4</dt><dd>chase · ground · top · free camera</dd>
-        <dt>C</dt><dd>compare with another replay</dd>
-        <dt>L</dt><dd>live stream / follow live</dd>
-        <dt>[ ]</dt><dd>slower / faster</dd>
-        <dt>T</dt><dd>trail colour: speed / phase</dd>
-        <dt>H</dt><dd>hide / show the interface</dd>
-        <dt>Home End</dt><dd>jump to start / end</dd>
-        <dt>drag · wheel</dt><dd>orbit / zoom the camera (double-click resets)</dd>
+        <dt>Space</dt><dd>Play / pause</dd>
+        <dt>&larr; &rarr;</dt><dd>Step one frame (Shift: one second)</dd>
+        <dt>Home / End</dt><dd>Jump to start / end</dd>
+        <dt>[ / ]</dt><dd>Slower / faster</dd>
+        <dt>1 2 3 4</dt><dd>Chase, ground, top-down, free camera</dd>
+        <dt>E</dt><dd>Engineering overlay: force and velocity vectors, guidance, dispersion</dd>
+        <dt>I</dt><dd>Replay information</dd>
+        <dt>C</dt><dd>Compare with another replay</dd>
+        <dt>L</dt><dd>Live stream / follow live</dd>
+        <dt>T</dt><dd>Trail colour: speed / phase</dd>
+        <dt>Q</dt><dd>Render quality: high / low</dd>
+        <dt>H</dt><dd>Hide / show the interface</dd>
+        <dt>Drag, wheel</dt><dd>Orbit / zoom the camera; double-click resets</dd>
       </dl>
-      <p>URL: <code>?replay=&lt;id&gt;&amp;camera=chase|ground|top|free</code> · <code>?compare=&lt;a&gt;,&lt;b&gt;</code> · <code>?replay=live</code></p>
+      <p class="fine">URL parameters: <code>?replay=&lt;id&gt;</code> <code>&amp;camera=chase|ground|top|free</code> <code>&amp;eng=1</code> <code>?compare=&lt;a&gt;,&lt;b&gt;</code> <code>?replay=live</code></p>
     </div>
   </div>
 

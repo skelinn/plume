@@ -44,11 +44,11 @@ const FRAG = /* glsl */ `
   varying vec3 vCol;
   void main() { gl_FragColor = vec4(mix(vCol, uFlat, uUseFlat), uOpacity); }`;
 
-const PHASE_COLORS = [[0.2, 0.85, 1.0], [1.0, 0.55, 0.15], [0.55, 0.9, 0.4], [0.85, 0.5, 1.0], [1.0, 0.85, 0.3], [0.4, 0.6, 1.0]];
+const PHASE_COLORS = [[0.75, 0.82, 0.9], [0.95, 0.68, 0.42], [0.62, 0.8, 0.62], [0.78, 0.68, 0.9], [0.92, 0.85, 0.55], [0.55, 0.7, 0.88]];
 
 function speedColor(f, out) {
-  // cyan -> pale yellow -> orange
-  const a = [0.16, 0.8, 1.0], b = [1.0, 0.93, 0.55], c = [1.0, 0.42, 0.1];
+  // cool grey-blue -> white -> warm amber (restrained: it is an annotation, not a light source)
+  const a = [0.55, 0.68, 0.82], b = [0.92, 0.92, 0.9], c = [0.95, 0.62, 0.32];
   const [p, q, t] = f < 0.5 ? [a, b, f * 2] : [b, c, (f - 0.5) * 2];
   out[0] = p[0] + (q[0] - p[0]) * t; out[1] = p[1] + (q[1] - p[1]) * t; out[2] = p[2] + (q[2] - p[2]) * t;
   return out;
@@ -79,11 +79,11 @@ export class Trail {
     this.nVisible = 0;
     this.uniformsMain = {
       uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: 0.1 }, uWidth: { value: 2.6 },
-      uOpacity: { value: 0.95 }, uFlat: { value: new THREE.Vector3(1, 1, 1) }, uUseFlat: { value: 0 },
+      uOpacity: { value: 0.75 }, uFlat: { value: new THREE.Vector3(1, 1, 1) }, uUseFlat: { value: 0 },
     };
     this.uniformsPred = {
       uRes: this.uniformsMain.uRes, uNear: this.uniformsMain.uNear, uWidth: { value: 1.4 },
-      uOpacity: { value: 0.2 }, uFlat: { value: new THREE.Vector3(0.6, 0.78, 1.0) }, uUseFlat: { value: 1 },
+      uOpacity: { value: 0.16 }, uFlat: { value: new THREE.Vector3(0.85, 0.85, 0.85) }, uUseFlat: { value: 1 },
     };
     const mk = (u) => new THREE.ShaderMaterial({
       uniforms: u, vertexShader: VERT, fragmentShader: FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide,
@@ -123,6 +123,7 @@ export class Trail {
       chunk.pred = new THREE.Mesh(gPred, this.matPred);
       chunk.pred.frustumCulled = false;
       chunk.pred.renderOrder = 4;
+      chunk.pred.visible = this._predOn ?? false;
       this.group.add(main, chunk.pred);
     }
     return chunk;
@@ -205,6 +206,9 @@ export class Trail {
     }
   }
 
+  /** The faint whole-path ("future") ribbon; the engineering overlay draws its own. */
+  setPredVisible(on) { for (const ch of this.chunks) if (ch.pred) ch.pred.visible = on; this._predOn = on; }
+
   layout(origin) {
     for (const ch of this.chunks) {
       ch.main.position.copy(ch.anchor).sub(origin);
@@ -216,8 +220,8 @@ export class Trail {
   setCameraInfo(near, w, h, pixelRatio = 1) {
     this.uniformsMain.uNear.value = near;
     this.uniformsMain.uRes.value.set(w, h);
-    this.uniformsMain.uWidth.value = 2.6 * pixelRatio;
-    this.uniformsPred.uWidth.value = 1.4 * pixelRatio;
+    this.uniformsMain.uWidth.value = 1.8 * pixelRatio;
+    this.uniformsPred.uWidth.value = 1.2 * pixelRatio;
   }
 
   dispose() {

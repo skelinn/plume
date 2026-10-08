@@ -20,11 +20,64 @@ export class Replay {
     for (const k of Object.keys(f)) this.frames[k] = f[k];
     for (const k of ['t', 'pos', 'quat']) this.frames[k] = this.frames[k] || [];
     const sc = this.meta.scene;
-    this.spherical = sc.frame === 'spherical' && sc.earth_radius > 0;
+    this.spherical = (sc.frame === 'spherical' || sc.frame === 'wgs84') && sc.earth_radius > 0;
     this.R = this.spherical ? sc.earth_radius : 0;
     this._derivedVel = !this.frames.vel;
     if (this._derivedVel) this.frames.vel = [];
     this._fillVel(0);
+    this._dn = 0;
+    this._derive();
+  }
+
+  /**
+   * Derived per-frame columns used by the 3-D models (computed incrementally, so live runs work):
+   *   _soot  accumulated "dirty" burn time (s): throttle-weighted, mostly from burns flown into the
+   *          vehicle's own plume (retro-propulsion) or near the ground
+   *   _glow  nozzle interior heat: follows throttle up instantly, cools with a 2 s time constant
+   *   _fins  grid-fin deployment, ramped over ~1.6 s from the recorded 0/1 `fins_out`
+   *   _legs  leg deployment, ramped from `legs_out` (if the replay has it)
+   */
+  _derive() {
+    const F = this.frames, n = this.n;
+    if (this._dn >= n) return;
+    const thr = F.throttle, thrust = F.thrust, tmax = this.meta.vehicle?.engine?.thrust_max || 0;
+    for (const k of ['_soot', '_glow', '_fins', '_legs']) F[k] = F[k] || [];
+    const q = new THREE.Quaternion(), ax = new THREE.Vector3();
+    for (let i = this._dn; i < n; i++) {
+      const dt = i ? Math.max(F.t[i] - F.t[i - 1], 0) : 0;
+      let th = thr && thr.length > i ? thr[i] : (thrust && tmax > 0 && thrust.length > i ? thrust[i] / tmax : 0);
+      th = Math.max(0, Math.min(th || 0, 1.2));
+      // body axis (world, ENU) vs velocity: retro burns sit in their own exhaust
+      const qq = F.quat[i];
+      q.set(qq[1], qq[2], qq[3], qq[0]);
+      ax.set(0, 0, 1).applyQuaternion(q);
+      const v = F.vel[i] || [0, 0, 0];
+      const sp = Math.hypot(v[0], v[1], v[2]);
+      const retro = sp > 3 ? Math.max(0, -(ax.x * v[0] + ax.y * v[1] + ax.z * v[2]) / sp) : 0;
+      const alt = F.alt && F.alt.length > i ? F.alt[i] : 1e3;
+      const near = Math.exp(-Math.max(alt, 0) / 25);
+      const prevS = i ? F._soot[i - 1] : 0;
+      F._soot[i] = prevS + dt * th * (0.06 + 0.94 * Math.max(retro, near));
+      const prevG = i ? F._glow[i - 1] : 0;
+      F._glow[i] = Math.max(th, prevG * Math.exp(-dt / 2.0));
+      const ramp = (src, dst, T) => {
+        const target = src && src.length > i ? (src[i] > 0.5 ? 1 : 0) : 1;
+        const prev = i ? dst[i - 1] : target;
+        const step = dt / T;
+        dst[i] = target > prev ? Math.min(target, prev + step) : Math.max(target, prev - step);
+      };
+      ramp(F.fins_out, F._fins, 1.6);
+      ramp(F.legs_out, F._legs, 2.0);
+    }
+    this._dn = n;
+  }
+
+  /** First time a string column takes a value (e.g. phase 'descent'), or null. */
+  firstTime(col, value) {
+    const c = this.frames[col];
+    if (!c) return null;
+    for (let i = 0; i < c.length; i++) if (c[i] === value) return this.frames.t[i];
+    return null;
   }
 
   get n() { return this.frames.t.length; }
@@ -46,6 +99,7 @@ export class Replay {
       for (let i = 0; i < src.length; i++) dst.push(src[i]);
     }
     this._fillVel(before);
+    this._derive();
     this.version++;
   }
 
@@ -161,5 +215,14 @@ export async function fetchReplay(id) {
   const url = '/api/replays/' + id.split('/').map(encodeURIComponent).join('/');
   const r = await fetch(url);
   if (!r.ok) throw new Error(`replay ${id}: HTTP ${r.status}`);
-  return new Replay(await r.json(), id);
+  const text = await r.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    // Python's json writes NaN / Infinity, which is not JSON: read those as null
+    data = JSON.parse(text.replace(/([:[,]\s*)-?(?:NaN|Infinity)(?=\s*[,\]}])/g, '$1null'));
+    console.warn(`replay ${id}: non-finite numbers (NaN/Infinity) read as null`);
+  }
+  return new Replay(data, id);
 }
