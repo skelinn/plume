@@ -153,6 +153,11 @@ def drop(
 
 SCENARIOS = {"hop_test": hop_test, "drop": drop}
 
+# hop-test rig scenarios (tethered hover, tether catch, translation step, free hop)
+from plume.hoprig.scenarios import HOP_RIG_SCENARIOS  # noqa: E402
+
+SCENARIOS.update(HOP_RIG_SCENARIOS)
+
 
 def run_scenario(name: str, vehicle: VehicleSpec, world: WorldSpec, out: Path, seed: int = 0, **kw):
     if name not in SCENARIOS:

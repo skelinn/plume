@@ -47,7 +47,13 @@ def sim(
     vehicle: Annotated[
         str, typer.Argument(help="vehicle preset name or YAML path")
     ] = "lander_small",
-    script: Annotated[str, typer.Option(help="scenario: hop_test | drop")] = "hop_test",
+    script: Annotated[
+        str,
+        typer.Option(
+            help="scenario: hop_test | drop | tethered_hover | tether_catch | "
+            "translation_step | free_hop"
+        ),
+    ] = "hop_test",
     out: Annotated[Path | None, typer.Option(help="replay output path")] = None,
     seed: int = 0,
     wind: Annotated[float, typer.Option(help="mean wind speed, m/s")] = 0.0,
@@ -67,6 +73,9 @@ def sim(
     )
     out = out or Path("runs") / f"{script}_{v.name}.plume.json.gz"
     streamer, on_frame = _live(live)
+    if script not in SCENARIOS:
+        console.print(f"[red]unknown scenario {script!r}; choose from {sorted(SCENARIOS)}[/]")
+        raise typer.Exit(2)
     rec = SCENARIOS[script](v, world, seed=seed, on_frame=on_frame)
     if streamer:
         streamer.end(rec.meta.get("outcome"))

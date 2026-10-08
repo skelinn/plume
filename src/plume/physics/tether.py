@@ -101,6 +101,11 @@ class Tether:
         vel = sim.data.qvel[:3]  # body-origin velocity, world frame
         p = pos + R @ self.attach
         v_p = vel + R @ np.cross(omega_b, self.attach)
+        if not getattr(sim, "_stage_forces", False):
+            # fast fidelity holds forces over the step: evaluate the stretch at the
+            # predicted mid-step position (as the simulator does for gravity), which
+            # keeps the stiff spring second-order accurate instead of pumping energy in
+            p = p + 0.5 * sim.dt * v_p
         stretch, rate, u = self.geometry(p, v_p)
         T = self.tension_for(stretch, rate)
         self.stretch = stretch
