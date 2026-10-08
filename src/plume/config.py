@@ -82,6 +82,8 @@ class TankSpec(Spec):
     z_bottom: float
     z_top: float
     radius: float = Field(gt=0)
+    slosh: bool = Field(False, description="model the first lateral slosh mode (spring-mass)")
+    slosh_damping: float = Field(0.02, ge=0, description="slosh damping ratio (baffles: 0.03-0.1)")
 
     @model_validator(mode="after")
     def _check(self):

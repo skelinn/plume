@@ -17,9 +17,10 @@
    - The cutoff is timed on the *coast-from-now* impact prediction: cut when it reaches the target, once below the entry-speed (heating) limit, with a floor at 0.75 × `entry_speed`.
    - The cross-track miss is steered by tilting off retrograde.
    - Earlier versions predicted with the burn continuing to `entry_speed` while cutting on a different rule. That inconsistency alone cost about 300 m.
-6. **Aerodynamic descent:**
-   - Subsonic only: steered with body and grid-fin lift (12° tilt cap) on the predicted miss.
-   - The drag-scale estimate (measured versus modelled deceleration) feeds the predictor.
+6. **Aerodynamic descent:** the vehicle is steered with body lift onto the predicted miss, and the drag-scale estimate (measured versus modelled deceleration) feeds the predictor.
+   - The allocator requests a *change* from the zero-tilt aerodynamic force. On an inclined supersonic descent the drag has a large horizontal component; asking for an absolute force made the allocator fight it, and the impact point ran away (−44 m to +1.7 km).
+   - **High fidelity:** steering is active up to Mach 5, with tilt caps of 15° supersonic and 20° subsonic. The aero database gives a monotonic side force when the engine-first body is tilted (the body moves *away* from the tilt): 2–5 m/s² at Mach 1.5 and 15–20°, about 0.4 m/s² subsonic.
+   - **Fast fidelity:** subsonic only, 12° cap. Strip theory gives a non-monotonic, sign-flipping side force beyond about 7°, and supersonic steering made every test case worse there.
 7. **Landing burn:**
    - Constant-deceleration hoverslam profile in the vertical, ZEM/ZEV feedback in the horizontal, and aero-aware thrust/tilt allocation.
    - If the predicted miss exceeds `max_divert_m` (default 250 m), the vehicle retargets to the closest reachable point rather than spending its landing propellant on an impossible divert.
@@ -52,6 +53,17 @@ Also tried and measured on six reference draws, then left off by default:
 - a divert-gate landing profile (brake to 15 m/s, then divert slowly)
 
 The divert gate shrinks the miss but runs out of propellant, or its fuel guard aborts the divert. A guidance law that optimises the divert and the propellant together (convex optimisation) is the next step.
+
+## Fast versus high fidelity for dependability numbers
+
+The two fidelities disagree about how well this vehicle can steer during descent. Measured side-force response to a commanded tilt:
+
+| | Mach 1.5–2.4, 15–20° tilt | Mach 0.5, 5° | Mach 0.5, 15–20° |
+|---|---|---|---|
+| fast (strip theory) | −1.2 to −1.5 m/s² (fins saturated, sign flips near 7°) | +0.15 m/s² | −0.25 to −0.39 m/s² |
+| high (aero database) | −2.0 to −4.9 m/s² | −0.12 m/s² | −0.31 to −0.44 m/s² |
+
+Dependability figures for the cargo hop should therefore come from **high-fidelity** campaigns. Fast-mode campaigns are a quick, pessimistic screen.
 
 ## Findings
 

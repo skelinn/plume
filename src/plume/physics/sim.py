@@ -30,6 +30,7 @@ from plume.physics.massprops import MassModel, MassProps
 from plume.physics.mjcf import GroundTile, build_mjcf, leg_angles
 from plume.physics.propulsion import RCS, Engine
 from plume.physics.recovery import Recovery
+from plume.physics.slosh import Slosh
 from plume.physics.wind import wind_from_world
 
 
@@ -289,6 +290,8 @@ class RocketSim:
         self._aero_by_legs = {True: self.aero}
         self._aero_thrust = hasattr(self.aero, "set_thrust")
         self.recovery = Recovery(vehicle.recovery)
+        self.slosh = Slosh(vehicle)
+        self._f_spec = np.array([0.0, 0.0, G0])  # last specific force at the CG, body axes
         self.extra_forces: list = []
         self._rotating = bool(getattr(self.gravity, "rotating", False))
         # high fidelity: forces are evaluated at every RK4 stage (true 4th order)
@@ -374,6 +377,9 @@ class RocketSim:
             self.grid_fins.reset()
         self.rail = None
         self.wind.reset(seed)
+        if hasattr(self, "slosh"):
+            self.slosh.reset()
+            self._f_spec = np.array([0.0, 0.0, G0])
         if hasattr(self, "legs_deployed"):
             self.set_legs(True)
         self.controls = Controls()
@@ -519,6 +525,10 @@ class RocketSim:
             f_t = thrust * self.engine.direction()
             tau_t = _z_cross(self.vehicle.engine.gimbal_z - cgz, f_t)
         f_r, tau_r, mdot_r = self.rcs.update(cgz, self.rcs_prop, dt)
+        if self.slosh.enabled:  # slosh reaction (body axes, about the CG), held for the step
+            f_s, tau_s = self.slosh.step(dt, self.tanks, self._f_spec, omega_b, cgz)
+            f_t = f_t + f_s
+            tau_t = tau_t + tau_s
         wind = self.wind.at(alt)
         if self.gravity.curved and wind.any():
             wind = self.gravity.local_to_frame(com, wind)
@@ -539,6 +549,7 @@ class RocketSim:
         lead = 0.0 if self._stage_forces else 0.5 * dt
         f_w, tau_w, diag = self._forces_at(pos, R, data.qvel[:3], omega_b, ctx, lead)
         f_a, tau_a, q, mach, v_air_w, f_chute, g = diag
+        self._f_spec = (f_t + f_a + f_r) / mp.mass
         self.q_dyn, self.mach = q, mach
         # keep the force breakdown for engineering replays / analysis
         self.last_forces = (R @ f_t, R @ f_a + (f_chute if f_chute is not None else 0.0), v_air_w)

@@ -35,6 +35,7 @@ MODEL_TEST_MODULES = [
     "tests/test_aerodb.py",
     "tests/test_navigation.py",
     "tests/test_actuators.py",
+    "tests/test_slosh.py",
     "tests/test_dem.py",
     "tests/test_montecarlo.py",
     # propulsion and mass properties are verified here (Tsiolkovsky, depletion, CG)
@@ -51,6 +52,7 @@ AREAS: dict[str, str] = {
     "navigation": "Navigation & sensors",
     "propulsion": "Propulsion & actuators",
     "mass": "Mass properties",
+    "slosh": "Propellant slosh",
     "terrain": "Terrain",
     "mc": "Monte Carlo machinery",
     "other": "Other",
@@ -65,6 +67,7 @@ RULES: list[tuple[str, str, str]] = [
     (r"test_aerodb", r"", "aero"),
     (r"test_navigation", r"", "navigation"),
     (r"test_actuators", r"", "propulsion"),
+    (r"test_slosh", r"", "slosh"),
     (r"test_dem", r"", "terrain"),
     (r"test_montecarlo", r"", "mc"),
     (r"test_physics_models", r"atmosphere|wind", "atmosphere"),
@@ -96,6 +99,7 @@ MODEL_AREAS: dict[str, tuple[str, ...]] = {
     "navigation": ("navigation",),
     "propulsion": ("propulsion",),
     "mass": ("mass",),
+    "slosh": ("slosh",),
     "terrain": ("terrain",),
 }
 
