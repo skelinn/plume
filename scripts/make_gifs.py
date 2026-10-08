@@ -27,7 +27,10 @@ SHOTS = {
     "hop": ("replay=cargo_hop_demo.plume.json.gz&camera=chase&t0=0&t1=110&fps=0.65", 14),
     "hop_landing": ("replay=cargo_hop_demo.plume.json.gz&camera=chase&t0=496&t1=527&fps=2", 14),
     "landing": ("replay=landing_pid_full_descent.plume.json.gz&camera=chase&t0=4&t1=40&fps=2", 14),
-    "compare": ("compare=hobby_real.plume.json.gz,hobby_sim_calibrated.plume.json.gz&camera=chase&t0=-0.4&t1=13&fps=6", 15),
+    "compare": (
+        "compare=hobby_real.plume.json.gz,hobby_sim_calibrated.plume.json.gz&camera=chase&t0=-0.4&t1=13&fps=6",
+        15,
+    ),
     "hop_top": ("replay=cargo_hop_demo.plume.json.gz&camera=top&t0=0&t1=525&fps=0.14", 12),
 }
 
@@ -52,7 +55,9 @@ def wait_up(url: str, timeout: float = 60) -> None:
 def save_gif(frames: list[Image.Image], path: Path, fps: float) -> None:
     pal = frames[len(frames) // 2].convert("P", palette=Image.ADAPTIVE, colors=96)
     q = [f.convert("RGB").quantize(palette=pal, dither=Image.Dither.NONE) for f in frames]
-    q[0].save(path, save_all=True, append_images=q[1:], duration=int(1000 / fps), loop=0, optimize=True)
+    q[0].save(
+        path, save_all=True, append_images=q[1:], duration=int(1000 / fps), loop=0, optimize=True
+    )
 
 
 def main(names: list[str]) -> None:
@@ -69,12 +74,17 @@ def main(names: list[str]) -> None:
     try:
         wait_up(base + "/api/replays")
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(args=["--use-angle=d3d11", "--enable-gpu", "--ignore-gpu-blocklist"])
+            browser = pw.chromium.launch(
+                args=["--use-angle=d3d11", "--enable-gpu", "--ignore-gpu-blocklist"]
+            )
             page = browser.new_page(viewport={"width": W, "height": H}, device_scale_factor=1)
             for name in names:
                 query, gif_fps = SHOTS[name]
                 page.goto(f"{base}/?capture=1&{query}")
-                page.wait_for_function("window.plumeCapture && document.documentElement.dataset.captureReady === '1'", timeout=120_000)
+                page.wait_for_function(
+                    "window.plumeCapture && document.documentElement.dataset.captureReady === '1'",
+                    timeout=120_000,
+                )
                 n = page.evaluate("window.plumeCapture.frameCount")
                 frames = []
                 t_start = time.time()
@@ -83,7 +93,9 @@ def main(names: list[str]) -> None:
                     frames.append(Image.open(io.BytesIO(page.screenshot(type="png"))).copy())
                 path = OUT / f"{name}.gif"
                 save_gif(frames, path, gif_fps)
-                print(f"{name}: {n} frames in {time.time() - t_start:.0f}s -> {path} ({path.stat().st_size / 1e6:.1f} MB)")
+                print(
+                    f"{name}: {n} frames in {time.time() - t_start:.0f}s -> {path} ({path.stat().st_size / 1e6:.1f} MB)"
+                )
             browser.close()
     finally:
         server.terminate()

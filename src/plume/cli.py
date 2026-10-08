@@ -313,7 +313,9 @@ def bench(
     episodes: Annotated[int, typer.Option(help="episodes per stage and controller")] = 200,
     run_dir: Path = Path("runs/ppo_landing"),
     readme: Annotated[bool, typer.Option(help="write the table into README.md")] = True,
-    workers: Annotated[int | None, typer.Option(help="parallel processes (default: cores - 2)")] = None,
+    workers: Annotated[
+        int | None, typer.Option(help="parallel processes (default: cores - 2)")
+    ] = None,
 ):
     """PID vs PPO on every curriculum stage -> results table (and README)."""
     from plume.rl.benchmark import run_benchmark
