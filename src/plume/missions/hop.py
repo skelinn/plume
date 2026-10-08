@@ -204,9 +204,12 @@ class HopAutopilot:
         guidance: HopGuidanceSpec,
         kick_deg: float,
         rise_time: float,
+        ascent_profile: tuple[np.ndarray, np.ndarray] | None = None,
     ):
         self.sim = sim
         self.rise = rise_time
+        # planned flight-path angle vs speed (closed-loop ascent); None = follow velocity
+        self.profile = ascent_profile
         self.mw = mw
         self.g = guidance
         self.kick = math.radians(kick_deg)
@@ -249,6 +252,30 @@ class HopAutopilot:
         if phase == "coast" and fins is not None and not fins.deployed:
             fins.deploy(True)  # stowed for ascent, deployed after MECO
             self.events.append((self.sim.t, "phase", "Grid fins deployed"))
+
+    def _track_profile(self, st, vhat: np.ndarray) -> np.ndarray:
+        """Closed-loop ascent: pitch the thrust axis (in the vertical plane of the
+        velocity) so the flight-path angle tracks the pre-flight plan at this speed, with
+        the angle of attack limited (tighter at high dynamic pressure). Open-loop velocity
+        following let wind and thrust errors reshape the whole trajectory (apogee 80-220
+        km in Monte Carlo)."""
+        sp, gam = self.profile
+        speed = float(np.linalg.norm(st.vel_com))
+        if speed < sp[0] or speed > sp[-1]:
+            return vhat
+        up = st.up
+        s_up = float(vhat @ up)
+        g_now = math.asin(max(-1.0, min(1.0, s_up)))
+        g_ref = float(np.interp(speed, sp, gam))
+        a_max = math.radians(2.0 if st.q_dyn > 20_000.0 else 5.0)
+        d = float(np.clip(2.0 * (g_ref - g_now), -a_max, a_max))
+        h = vhat - s_up * up
+        hn = float(np.linalg.norm(h))
+        if hn < 1e-6:
+            return vhat
+        h /= hn
+        g_cmd = g_now + d
+        return math.cos(g_cmd) * h + math.sin(g_cmd) * up
 
     def _g_limited_throttle(self, st) -> float:
         """Throttle that keeps the cargo's sensed acceleration under the limit, counting
@@ -300,6 +327,8 @@ class HopAutopilot:
             # follow the *ground* velocity: at low speed a tail/head wind would otherwise
             # steer the turn (the planner assumes calm air); AoA stays a few degrees
             axis = st.vel_com / np.linalg.norm(st.vel_com)
+            if self.profile is not None:
+                axis = self._track_profile(st, axis)
             # crossrange correction from the vacuum impact point
             imp = kepler_impact(
                 st.com,
@@ -476,11 +505,9 @@ class HopAutopilot:
 
 
 # ----------------------------------------------------------------------------- planning
-def plan_ascent(
-    spec: MissionSpec, mw: MissionWorld, vehicle, cargo: float, world=None
-) -> tuple[float, float]:
-    """Choose (vertical rise time, pitch-kick angle) that reach the target range with the
-    most propellant left (3-DOF gravity turn, vacuum impact prediction)."""
+def _plan_run(spec: MissionSpec, mw: MissionWorld, vehicle, cargo: float, world=None):
+    """The planner's 3-DOF ascent model: returns ``run(rise, kick[, profile])`` -> score
+    (propellant left at the target-reaching cutoff, penalised for lofted arcs)."""
     g = spec.guidance
     gravity = mw.gravity
     world = (world or spec.world).model_copy(
@@ -495,7 +522,7 @@ def plan_ascent(
     m0 = pm.m_dry + pm.prop0
     t_max = pm.engine.max_thrust(0.0)
 
-    def run(rise: float, kick: float) -> float:
+    def run(rise: float, kick: float, profile: list | None = None) -> float:
         kick_axis = math.cos(kick) * up0 + math.sin(kick) * dr
         hold = {"aligned": False}
 
@@ -535,8 +562,13 @@ def plan_ascent(
             stop_on_ground=True,
             ground_altitude=mw.terrain_height(*mw.site_a) - 10.0,
             stop_fn=stop,
-            record_every=100_000,
+            record_every=100_000 if profile is None else 5,
         )
+        if profile is not None:  # flight-path angle vs speed through the gravity turn
+            for t, rr, vv in zip(traj.t, traj.pos, traj.vel, strict=True):
+                sp = float(np.linalg.norm(vv))
+                if t > rise + g.kick_time and sp > 1.0:
+                    profile.append((sp, math.asin(float(vv @ gravity.up(rr)) / sp)))
         r, v = traj.pos[-1], traj.vel[-1]
         imp = kepler_impact(r, v, gravity, r_target)
         reached = imp is not None and mw.along_cross(imp)[0] >= mw.range * 0.999
@@ -545,6 +577,17 @@ def plan_ascent(
         # steep (lofted) arcs re-enter steeply: penalise flight-path angles above the cap
         gamma = math.degrees(math.asin(float(v @ gravity.up(r)) / float(np.linalg.norm(v))))
         return traj.mass[-1] - 50.0 * max(gamma - g.max_flight_path_deg, 0.0)
+
+    return run
+
+
+def plan_ascent(
+    spec: MissionSpec, mw: MissionWorld, vehicle, cargo: float, world=None
+) -> tuple[float, float]:
+    """Choose (vertical rise time, pitch-kick angle) that reach the target range with the
+    most propellant left (3-DOF gravity turn, vacuum impact prediction)."""
+    g = spec.guidance
+    run = _plan_run(spec, mw, vehicle, cargo, world)
 
     best = (-math.inf, g.rise_time, math.radians(2.0))
     rises = [g.rise_time] if g.kick_angle_deg is not None else [4.0, 7.0, 10.0, 14.0]
@@ -570,6 +613,20 @@ def plan_ascent(
             b = lo + gr * (hi - lo)
             fb = run(rise, b)
     return rise, math.degrees(0.5 * (lo + hi))
+
+
+def ascent_profile(
+    spec: MissionSpec, mw: MissionWorld, vehicle, cargo: float, world, rise: float, kick_deg: float
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Planned flight-path angle (rad) vs speed (m/s) through the gravity turn, from the
+    same 3-DOF model and direction law as ``plan_ascent`` (calm air, nominal vehicle)."""
+    prof: list[tuple[float, float]] = []
+    _plan_run(spec, mw, vehicle, cargo, world)(rise, math.radians(kick_deg), prof)
+    if len(prof) < 5:
+        return None
+    a = np.array(sorted(prof))
+    keep = np.concatenate([[True], np.diff(a[:, 0]) > 1e-6])
+    return a[keep, 0], a[keep, 1]
 
 
 # ----------------------------------------------------------------------------- runner
@@ -665,7 +722,10 @@ def run_mission(
     from plume.control.navigation import Navigator, navigation_mode
 
     nav = Navigator(sim, seed=seed) if navigation_mode(world) == "ekf" else None
-    ap = HopAutopilot(sim, mw, spec.guidance, kick_deg, rise)
+    profile = None
+    if spec.guidance.closed_loop_ascent:
+        profile = ascent_profile(spec, mw, vehicle, cargo, nominal_world or world, rise, kick_deg)
+    ap = HopAutopilot(sim, mw, spec.guidance, kick_deg, rise, ascent_profile=profile)
     rec = Recorder(
         sim.replay_meta(
             f"Cargo hop: {spec.name}",

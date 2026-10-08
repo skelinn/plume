@@ -573,6 +573,9 @@ class HopGuidanceSpec(Spec):
     max_divert_m: float | None = Field(
         250.0, description="landing-burn divert reach; beyond it land at the closest reachable point"
     )
+    closed_loop_ascent: bool = Field(
+        True, description="track the planned flight-path angle vs speed in the gravity turn"
+    )
     divert_gate: bool = Field(
         False,
         description="experimental: brake to a slow gate above the pad and fly the divert at "
